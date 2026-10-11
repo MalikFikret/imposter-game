@@ -1,8 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getDatabase, ref, onValue, get, set, update, remove, runTransaction, onDisconnect, query, orderByChild, limitToLast, increment } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
-import { CATS } from './words.js?v=1.0.10';
-import { STR, LANGS } from './i18n.js?v=1.0.10';
+import { CATS } from './words.js?v=1.0.11';
+import { STR, LANGS } from './i18n.js?v=1.0.11';
 
 // Public web config. Not a secret: access is enforced by database.rules.json.
 const firebaseConfig = {
@@ -15,7 +15,7 @@ const firebaseConfig = {
   appId: '1:358335009293:web:439ba4c30a8efa69787b44'
 };
 
-const APP_VERSION = '1.0.10';
+const APP_VERSION = '1.0.11';
 const REPO_URL = 'https://github.com/MalikFikret/imposter-game';
 const guideUrl = () => `guide/${['tr', 'ar', 'en'].includes(S.ui) ? S.ui : 'en'}.html`;
 
@@ -863,11 +863,11 @@ function statsOf(r) {
     if (!h) continue;
     const imps = arr(h.imps), out = arr(h.out);
     arr(h.roster).forEach(p => {
-      const x = st[p] || (st[p] = { played: 0, won: 0, imp: 0 });
+      const x = st[p] || (st[p] = { played: 0, won: 0, imp: 0, wonCrew: 0, wonImp: 0 });
       if (out.includes(p) && !imps.includes(p)) return;
       x.played++;
       if (imps.includes(p)) x.imp++;
-      if (imps.includes(p) ? h.impWins : !h.impWins) x.won++;
+      if (imps.includes(p) ? h.impWins : !h.impWins) { x.won++; if (imps.includes(p)) x.wonImp++; else x.wonCrew++; }
     });
   }
   return st;
@@ -878,17 +878,18 @@ function viewScores(r, host) {
   const sc = scoresOf(r), st = statsOf(r);
   return `<section class="stack"><span class="label">${esc(t('scores'))}</span>
     <div class="table-wrap"><table class="tbl board">
-      <thead><tr><th class="rk">#</th><th>${esc(t('colPlayer'))}</th><th class="num minor">${esc(t('colWon'))}</th><th class="num minor">${esc(t('colPlayed'))}</th><th class="num minor">${esc(t('colImp'))}</th><th class="num pts">${esc(t('colPoints'))}</th></tr></thead>
+      <thead><tr><th class="rk" rowspan="2">#</th><th rowspan="2">${esc(t('colPlayer'))}</th><th class="num minor" rowspan="2">${esc(t('colPlayed'))}</th><th class="num minor" rowspan="2">${esc(t('colImpTimes'))}</th><th class="num minor grp" colspan="2">${esc(t('colWon'))}</th><th class="num pts" rowspan="2">${esc(t('colPoints'))}</th></tr>
+        <tr><th class="num minor sub">${esc(t('colWonCrew'))}</th><th class="num minor sub">${esc(t('colWonImp'))}</th></tr></thead>
       <tbody>${(() => {
         // Standard competition ranking: equal points share a rank (1, 1, 3 ...)
         let rank = 0, prev = null;
         return sc.map(([p, n], i) => {
           if (n !== prev) { rank = i + 1; prev = n; }
-          const x = st[p] || { played: 0, won: 0, imp: 0 };
+          const x = st[p] || { played: 0, won: 0, imp: 0, wonCrew: 0, wonImp: 0 };
           const lead = rank === 1 && n > 0;
           return `<tr class="${lead ? 'lead' : ''}"><td class="rk"><span class="rank">${rank}</span></td>
             <td class="who"><span class="nm">${esc(nameOf(p))}</span></td>
-            <td class="num minor">${x.won}</td><td class="num minor">${x.played}</td><td class="num minor">${x.imp}</td>
+            <td class="num minor">${x.played}</td><td class="num minor">${x.imp}</td><td class="num minor">${x.wonCrew}</td><td class="num minor">${x.wonImp}</td>
             <td class="num pts"><b>${n}</b></td></tr>`;
         }).join('');
       })()}</tbody>

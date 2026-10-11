@@ -209,21 +209,26 @@ main.stack-lg { gap: 20px; }
 :root[dir="rtl"] .tbl th { letter-spacing: 0; font-size: .8rem; }
 .tbl td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .tbl tr:last-child td { border-bottom: 0; }
-.tbl .num { text-align: end; font-variant-numeric: tabular-nums; font-family: var(--font-mono); white-space: nowrap; }
+.tbl .num { text-align: center; font-variant-numeric: tabular-nums; font-family: var(--font-mono); white-space: nowrap; }
 .tbl tr.lead td:first-child { font-weight: 800; }
 /* Score board */
 .board td { vertical-align: middle; padding: 12px 8px; }
-.board th.rk, .board td.rk { width: 1%; padding-inline: 10px 2px; text-align: center; }
-.board .rank { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; font-family: var(--font-mono); font-weight: 700; font-size: .85rem; color: var(--muted); border: 1.5px solid var(--line); }
+.board th.rk, .board td.rk { width: 1%; padding-inline: 8px 0; text-align: center; }
+.board .rank { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; font-family: var(--font-mono); font-weight: 700; font-size: .85rem; color: var(--muted); border: 1.5px solid var(--line); }
 .board tr.lead .rank { background: var(--fg); color: var(--on-fg); border-color: var(--fg); }
 .board .who { width: 100%; }
-.board .nm { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.board .nm { display: block; font-weight: 600; white-space: nowrap; }
 .board tr.lead .nm { font-weight: 800; }
 .board .minor { color: var(--muted); font-size: .82rem; }
-.board .minor { padding-inline: 5px; }
-.board th.minor { font-size: .6rem; letter-spacing: 0; }
-.board th.pts { color: var(--fg); padding-inline: 6px 14px; letter-spacing: 0; }
-.board td.pts { padding-inline: 6px 14px; }
+.board .minor { padding-inline: 3px; }
+.board td.who { padding-inline: 8px 4px; }
+:root[dir="rtl"] .board th.minor { font-size: .68rem; }
+.board th.minor { font-size: .6rem; letter-spacing: 0; white-space: normal; line-height: 1.25; vertical-align: bottom; }
+.board th.grp { border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.board th.sub { padding-top: 4px; }
+.board thead th[rowspan] { vertical-align: bottom; }
+.board th.pts { color: var(--fg); padding-inline: 4px 12px; letter-spacing: 0; }
+.board td.pts { padding-inline: 4px 12px; }
 .board td.pts b { font-family: var(--font-mono); font-weight: 800; font-size: 1.25rem; line-height: 1; color: var(--fg); }
 :root[dir="rtl"] .board td.pts b { font-weight: 800; }
 .board tr.lead td { background: color-mix(in srgb, var(--crew) 7%, transparent); }
