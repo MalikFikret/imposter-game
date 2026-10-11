@@ -15,7 +15,7 @@ A multilingual party word game for 3–10 players. Everyone gets the same secret
 | Area | What it does |
 |---|---|
 | Game modes | **Online room**: every player joins from their own phone with a 6-character code or invite link and votes on their own device. **Single-phone room**: one phone is passed around; votes are made out loud and marked on the phone. |
-| Rounds | Random speaking order (the imposter speaks first only ~5% of the time), vote with explicit confirmation, automatic re-vote on ties, 60-second guess timer for a caught imposter, majority "did they guess it?" vote. |
+| Rounds | Random speaking order (the imposter speaks first only ~5% of the time), each player moves to the vote screen on their own, votes can be changed until everyone has confirmed, automatic re-vote on ties, 60-second guess timer for a caught imposter, then the host marks "did they guess it?". |
 | Scoring | Crew win: +1 to every crew member still in the round. Imposter win: +2 to each imposter. Per-room history and a score table (points, wins, rounds played, times as imposter). |
 | Room creation | Online rooms are created in two steps: (1) the host sets the room name, a 6-digit room PIN and the rules; (2) the host joins as a player on the normal join screen with a name and 4-digit personal PIN. Single-phone rooms are created in one step. |
 | Rooms | Optional room name, private (code only) or public (listed on the main menu), editable rules (word language, categories, 1–2 imposters, category hint for the imposter), persistent across days. |
@@ -51,7 +51,7 @@ rooms/{CODE}                       CODE = 6 chars from A–Z, 2–9 (no 0/O/1/I/
   members/{uid} = slot             which seat a device occupies (used by the rules)
   game      {phase, round, cat, wi, word, lang, hint, roster[], imps[], order[], pass[], out[], vr, caught, guessEnd, impWins, ...}
   votes/{slot}   {key: "round_voteRound", target}
-  judges/{slot}  {round, yes}
+  judges/{slot}  {round, yes}   (legacy, unused since 1.0.7)
   history/r{n}   {round, cat, word, lang, roster[], imps[], out[], caught, impWins, names{}, at}
   used/{cat}[_{lang}]/{index} = true      words already played in this room
 publicRooms/{CODE}   {name, hostName, lang, players, phase, updatedAt}   listing for public rooms
@@ -66,10 +66,12 @@ A **seat** (`slot`) is independent from the device identity (`uid`). This is wha
 ### Game phases
 
 ```
-online:  lobby → play → vote ⇄ tie → guess (60 s) → judge → result → (new round)
+online:  lobby → play ⇄ tie → guess (60 s) → judge → result → (new round)
 local:   lobby → cards → discuss → vote → guess (60 s) → judge → result
                           ↑ tie ─┘
 ```
+
+Online, voting happens inside `play`: "Go to voting" only switches the local view, so every player decides when to leave the discussion. A vote can be withdrawn (`votes/{slot}` set to null) and re-cast until every active player holds a vote for the current `round_voteRound` key; the last confirmation resolves the vote. In `judge` only the host decides the outcome.
 
 Phase changes are done with `runTransaction` guarded on the expected phase/round, so concurrent clients cannot double-apply them. Results are written to `history/r{n}` with a create-only rule, so a round can never be scored twice. Scores are always derived from history, never stored as counters.
 
@@ -80,7 +82,7 @@ Phase changes are done with `runTransaction` guarded on the expected phase/round
 | `auth != null` everywhere | Requests that do not come through the app (no anonymous session) are rejected. |
 | No read on `rooms/` root | Rooms cannot be listed; you need the code. Public rooms are listed only through `publicRooms/`. |
 | Host-only cascade on `rooms/{code}` | Only the current host can change settings, kick, reset history or delete the room. The host may also delete `secrets/{code}` as a whole (delete only, never read). |
-| Per-seat writes | A device can only write its own seat's `online`, `status` (`in`/`left`), `nameReq`, vote and judge answer. Names change only through host approval. |
+| Per-seat writes | A device can only write its own seat's `online`, `status` (`in`/`left`), `nameReq` and vote. Names change only through host approval. |
 | `secrets/` has no read rule | PINs are never readable. Ownership is proven by writing a guess to `claims/` and letting the rule compare it with the secret. |
 | `history/r{n}` create-only | Results are immutable once written. |
 | PIN inputs | Rendered as digit-only text inputs masked with CSS (`-webkit-text-security`), not `type="password"`, so browsers neither offer to save them nor show data-breach warnings for common PINs. |

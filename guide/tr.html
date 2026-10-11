@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Cairo:wght@400;600;800;900&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap">
-<link rel="stylesheet" href="../style.css?v=1.0.6">
+<link rel="stylesheet" href="../style.css?v=1.0.7">
 </head>
 <body>
 <div id="app" class="guide">
@@ -61,10 +61,10 @@
   <ol class="steps">
     <li><b>Kart:</b> Herkesin kartında kategori ve kelime yazar. Sahtekârın kartında kelime yerine <i>Sahtekârsın</i> yazar. Kurallara göre sahtekâr kategoriyi görebilir ya da göremez.</li>
     <li><b>İpucu:</b> Konuşma sırasına göre herkes kelimeyle ilgili tek bir ipucu söyler. Kelimeyi doğrudan söylemek yok. Sahtekâr da biliyormuş gibi davranır.</li>
-    <li><b>Oylama:</b> Şüphelendiğin kişiye dokun, sonra <i>Oyumu onayla</i>. Onaylamadan önce değiştirebilirsin.</li>
+    <li><b>Oylama:</b> Hazır olan <i>Oylamaya geç</i>'e basar. Bu sadece kendi ekranını oylamaya götürür, diğerleri konuşma ekranında kalır. Şüphelendiğin kişiye dokun, sonra <i>Oyumu onayla</i>. Herkes oy verene kadar <i>Oyumu değiştir</i> ile oyunu değiştirebilirsin. Son kişi oyunu verince oylar sayılır.</li>
     <li><b>Eşitlik:</b> Oylar eşitse herkes bir ipucu daha söyler ve yeniden oylanır.</li>
     <li><b>Yakalandı:</b> Seçilen kişi sahtekârsa kelimeyi tahmin etmek için <b>1 dakikası</b> olur. Tahminini yüksek sesle söyler.</li>
-    <li><b>Karar:</b> Süre bitince diğer oyuncular <i>Bildi / Bilemedi</i> diye oylar. Çoğunluk karar verir.</li>
+    <li><b>Karar:</b> Süre bitince <i>Bildi / Bilemedi</i> kararını sadece oda sahibi verir. Diğerleri sonucu bekler.</li>
   </ol>
 </section>
 
@@ -94,6 +94,7 @@
 <section id="sahip">
   <h2>Oda sahibi neler yapabilir</h2>
   <ul>
+    <li>Sahtekâr yakalanınca tahminini dinleyip <i>Bildi / Bilemedi</i> kararını verir.</li>
     <li>Turu başlatır, iptal eder, kuralları değiştirir (kelime dili, kategoriler, sahtekâr sayısı, sahtekâr kategoriyi görsün mü, açık/özel).</li>
     <li>Oyuncu çıkarabilir. Çıkarılan oyuncunun yanında <i>oda sahibi tarafından atıldı</i> yazar, puanları silinmez.</li>
     <li>İsim değişikliği isteklerini onaylar ya da reddeder.</li>

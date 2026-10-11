@@ -1,8 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getDatabase, ref, onValue, get, set, update, remove, runTransaction, onDisconnect, query, orderByChild, limitToLast, increment } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
-import { CATS } from './words.js?v=1.0.6';
-import { STR, LANGS } from './i18n.js?v=1.0.6';
+import { CATS } from './words.js?v=1.0.7';
+import { STR, LANGS } from './i18n.js?v=1.0.7';
 
 // Public web config. Not a secret: access is enforced by database.rules.json.
 const firebaseConfig = {
@@ -15,7 +15,7 @@ const firebaseConfig = {
   appId: '1:358335009293:web:439ba4c30a8efa69787b44'
 };
 
-const APP_VERSION = '1.0.6';
+const APP_VERSION = '1.0.7';
 const REPO_URL = 'https://github.com/MalikFikret/imposter-game';
 const guideUrl = () => `guide/${['tr', 'ar', 'en'].includes(S.ui) ? S.ui : 'en'}.html`;
 
@@ -266,7 +266,8 @@ function onRoomChange() {
   const g = (S.room && S.room.game) || {};
   if (g.round !== S.local.round) { S.local = { round: g.round, idx: 0, shown: false }; S.pick = null; S.cardOpen = false; }
   const k = vkey(g) + g.phase;
-  if (k !== S.lastKey) { S.lastKey = k; S.pick = null; }
+  // New vote key or phase: clear the local pick and send this device back to the discussion screen
+  if (k !== S.lastKey) { S.lastKey = k; S.pick = null; S.voteView = false; S.changing = false; }
   armPresence();
   syncPublic();
   autoChecks();
@@ -283,14 +284,12 @@ function autoChecks() {
   const once = key => { if (S.attempted[key]) return false; S.attempted[key] = true; return true; };
   const act = activeRoster(g);
   const outKey = arr(g.out).length;
-  if (isOnline() && g.phase === 'vote') {
+  // Online voting happens during 'play' (each player opens the vote screen on their own).
+  // 'vote' is kept for rooms that were mid-vote before this version.
+  if (isOnline() && (g.phase === 'play' || g.phase === 'vote')) {
     const key = vkey(g), v = r.votes || {};
-    if (act.length && act.every(p => v[p] && v[p].key === key) && once(`v${key}_${outKey}`)) resolveVotes();
-  }
-  if (isOnline() && g.phase === 'judge') {
-    const j = r.judges || {};
-    const judges = act.filter(p => p !== g.caught);
-    if (judges.every(p => j[p] && j[p].round === g.round) && once(`j${g.round}_${outKey}`)) resolveJudge();
+    const sig = act.map(p => (v[p] && v[p].key === key) ? v[p].target : '-').join(',');
+    if (act.length && act.every(p => v[p] && v[p].key === key) && once(`v${key}_${outKey}_${sig}`)) resolveVotes();
   }
   if (g.phase === 'guess' && g.guessEnd && now() >= g.guessEnd && once('g' + g.round)) toJudge();
   if (g.phase === 'result' && !(r.history && r.history['r' + g.round]) && once('h' + g.round)) writeHistory();
@@ -317,19 +316,15 @@ function resolveVotes() {
   act.forEach(p => { const x = v[p]; if (x && x.key === key && x.target && act.includes(x.target)) counts[x.target] = (counts[x.target] || 0) + 1; });
   const max = Math.max(0, ...Object.values(counts));
   const top = Object.keys(counts).filter(k => counts[k] === max);
-  const guard = cur => cur.phase === 'vote' && cur.round === g.round && (cur.vr || 0) === (g.vr || 0);
+  const guard = cur => (cur.phase === 'play' || cur.phase === 'vote') && cur.round === g.round && (cur.vr || 0) === (g.vr || 0);
   if (max === 0 || top.length !== 1) return tx(guard, () => ({ phase: 'tie', tied: top }));
   return tx(guard, () => caughtPatch(g, top[0]));
 }
-function resolveJudge() {
-  const g = S.room.game, j = S.room.judges || {};
-  let yes = 0, no = 0;
-  activeRoster(g).filter(p => p !== g.caught).forEach(p => {
-    const x = j[p];
-    if (x && x.round === g.round) { if (x.yes) yes++; else no++; }
-  });
-  // Majority decides; a tie counts as "did not guess"
-  return tx(cur => cur.phase === 'judge' && cur.round === g.round, () => ({ phase: 'result', impWins: yes > no }));
+// Only the host marks whether the caught imposter guessed the word
+function hostJudge(yes) {
+  const g = S.room.game;
+  if (!isHost()) return;
+  return tx(cur => cur.phase === 'judge' && cur.round === g.round, () => ({ phase: 'result', impWins: !!yes }));
 }
 function toJudge() {
   const g = S.room.game;
@@ -343,7 +338,7 @@ function continueWithout(slot) {
     if (arr(cur.imps).includes(slot)) return { out, phase: 'result', impWins: false, caught: null, impLeft: slot };
     if (arr(cur.roster).filter(p => !out.includes(p)).length < 3) return { out, phase: 'lobby' };
     const patch = { out };
-    if (cur.phase === 'tie') { patch.phase = 'vote'; patch.vr = (cur.vr || 0) + 1; patch.tied = null; }
+    if (cur.phase === 'tie') { patch.phase = 'play'; patch.vr = (cur.vr || 0) + 1; patch.tied = null; }
     return patch;
   });
 }
@@ -991,23 +986,34 @@ function orderBlock(g) {
     <p class="muted">${esc(t('orderHint'))}</p></section>`;
 }
 
-function vPlay(r, g) {
-  return myCard(g) + orderBlock(g) + `<button class="btn" data-act="toVote">${esc(t('toVote'))}</button>`;
+// Online discussion. "Go to vote" only switches THIS device to the vote screen;
+// the shared phase stays 'play' so the others keep their discussion screen.
+function vPlay(r, g, host) {
+  if (S.voteView || g.phase === 'vote') return vVote(r, g, host);
+  const key = vkey(g), votes = r.votes || {}, act = activeRoster(g);
+  const n = act.filter(p => votes[p] && votes[p].key === key).length;
+  const mine = votes[mySlot()], done = mine && mine.key === key;
+  let h = myCard(g) + orderBlock(g) + `<button class="btn" data-act="toVote">${esc(t(done ? 'seeVote' : 'toVote'))}</button>`;
+  if (n) h += `<p class="muted">${esc(t('votedCount', { n, total: act.length }))}</p>`;
+  return h;
 }
 
 function vVote(r, g, host) {
   const key = vkey(g), votes = r.votes || {}, me = mySlot(), mine = votes[me];
-  const done = mine && mine.key === key;
+  const done = mine && mine.key === key && !S.changing;
   const act = activeRoster(g);
   let h = `<section class="stack"><h2 class="h2">${esc(t('whoImp'))}</h2>${g.vr ? `<span class="badge self-start">${esc(t('revoteN', { n: g.vr + 1 }))}</span>` : ''}`;
-  if (done) h += `<div class="verdict">${t('voted', { name: esc(nameOf(mine.target)) })}</div>`;
-  else {
+  if (done) {
+    h += `<div class="verdict">${t('voted', { name: esc(nameOf(mine.target)) })}</div>
+      <button class="btn ghost" data-act="changeVote">${esc(t('changeVote'))}</button>`;
+  } else {
     h += `<p class="muted">${esc(t('pickOne'))}</p><div class="stack">${act.filter(p => p !== me).map(p =>
       `<button class="vote" data-act="pick" data-p="${esc(p)}" aria-pressed="${S.pick === p}"><span>${esc(nameOf(p))}</span><span class="tick" aria-hidden="true">${S.pick === p ? '✓' : ''}</span></button>`).join('')}</div>
       <button class="btn" data-act="confirmVote" ${S.pick ? '' : 'disabled'}>${esc(t('confirm'))}</button>`;
   }
   const waiting = act.filter(p => !(votes[p] && votes[p].key === key));
   h += `<p class="muted">${waiting.length ? t('waitingFor', { names: waiting.map(p => esc(nameOf(p))).join(sep()) }) : esc(t('allIn'))}</p></section>`;
+  if (g.phase === 'play') h += `<button class="btn ghost small self-start" data-act="backTalk">${esc(t('backTalk'))}</button>`;
   if (host && waiting.length) h += `<button class="btn ghost small self-start" data-act="countNow">${esc(t('countNow'))}</button>`;
   return h + myCard(g);
 }
@@ -1029,19 +1035,12 @@ function vGuess(r, g, host) {
     ${host ? `<button class="btn ghost small self-start" data-act="endGuess">${esc(t('endEarly'))}</button>` : ''}`;
 }
 
+// After the guess minute only the host decides; everyone else waits
 function vJudge(r, g, host) {
-  const j = r.judges || {}, me = mySlot();
-  const judges = activeRoster(g).filter(p => p !== g.caught);
-  const amJudge = judges.includes(me);
-  const answered = j[me] && j[me].round === g.round;
   let h = `<section class="stack"><h2 class="h2">${esc(t('judgeQ', { name: nameOf(g.caught) }))}</h2>`;
-  if (amJudge && !answered) h += `<div class="row two"><button class="btn" data-act="judge" data-v="1">${esc(t('yes'))}</button><button class="btn ghost" data-act="judge" data-v="0">${esc(t('no'))}</button></div>`;
-  else h += `<div class="verdict">${esc(amJudge ? t('answered') : t('othersDeciding'))}</div>`;
-  const waiting = judges.filter(p => !(j[p] && j[p].round === g.round));
-  if (waiting.length) h += `<p class="muted">${t('waitingFor', { names: waiting.map(p => esc(nameOf(p))).join(sep()) })}</p>`;
-  h += `</section>`;
-  if (host && waiting.length) h += `<button class="btn ghost small self-start" data-act="forceJudge">${esc(t('forceJudge'))}</button>`;
-  return h;
+  if (host) h += `<p class="muted">${esc(t('hostJudgeNote'))}</p><div class="row two"><button class="btn" data-act="hjudge" data-v="1">${esc(t('yes'))}</button><button class="btn ghost" data-act="hjudge" data-v="0">${esc(t('no'))}</button></div>`;
+  else h += `<div class="verdict">${esc(t('hostDeciding', { name: nameOf(r.meta && r.meta.hostSlot) }))}</div>`;
+  return h + `</section>`;
 }
 
 function vResult(r, g, host) {
@@ -1206,18 +1205,28 @@ async function act(a, ds) {
     case 'saveRules': saveRules(); break;
     case 'toggleCard': S.cardOpen = !S.cardOpen; render(); break;
     case 'toVote':
-      tx(cur => cur.round === g.round && (cur.phase === 'play' || cur.phase === 'discuss'), () => ({ phase: 'vote', tieNote: null })); break;
+      if (isOnline()) { S.voteView = true; render(); break; } // local view only
+      tx(cur => cur.round === g.round && cur.phase === 'discuss', () => ({ phase: 'vote', tieNote: null })); break;
+    case 'backTalk': S.voteView = false; S.changing = false; S.pick = null; render(); break;
     case 'pick': S.pick = ds.p; render(); break;
-    case 'confirmVote':
+    case 'confirmVote': {
       if (!S.pick) break;
-      set(P(`votes/${mySlot()}`), { key: vkey(g), target: S.pick }).catch(fail); break;
+      const target = S.pick;
+      S.changing = false;
+      set(P(`votes/${mySlot()}`), { key: vkey(g), target }).catch(fail); render(); break;
+    }
+    case 'changeVote': {
+      // Withdraw the vote so the count waits for this player again
+      const mine = (r.votes || {})[mySlot()];
+      S.pick = mine && mine.key === vkey(g) ? mine.target : null;
+      S.changing = true;
+      set(P(`votes/${mySlot()}`), null).catch(fail); render(); break;
+    }
     case 'countNow': resolveVotes(); break;
     case 'revote':
-      tx(cur => cur.phase === 'tie' && cur.round === g.round, cur => ({ phase: 'vote', vr: (cur.vr || 0) + 1, tied: null })); break;
+      tx(cur => cur.phase === 'tie' && cur.round === g.round, cur => ({ phase: 'play', vr: (cur.vr || 0) + 1, tied: null })); break;
     case 'endGuess': toJudge(); break;
-    case 'judge':
-      set(P(`judges/${mySlot()}`), { round: g.round, yes: ds.v === '1' }).catch(fail); break;
-    case 'forceJudge': resolveJudge(); break;
+    case 'hjudge': hostJudge(ds.v === '1'); break;
     case 'without': continueWithout(ds.p); break;
     case 'reset':
       update(ref(db, 'rooms/' + S.code), { history: null, 'game/phase': 'lobby' }).catch(fail); break;

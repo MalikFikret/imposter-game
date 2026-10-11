@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Cairo:wght@400;600;800;900&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap">
-<link rel="stylesheet" href="../style.css?v=1.0.6">
+<link rel="stylesheet" href="../style.css?v=1.0.7">
 </head>
 <body>
 <div id="app" class="guide">
@@ -61,10 +61,10 @@
   <ol class="steps">
     <li><b>Card:</b> Every card shows the category and the word. The imposter's card says <i>You are the imposter</i> instead of the word. Depending on the rules, the imposter may or may not see the category.</li>
     <li><b>Clues:</b> In speaking order, each player gives one clue about the word. Never say the word itself. The imposter acts like they know it.</li>
-    <li><b>Vote:</b> Tap the person you suspect, then <i>Confirm my vote</i>. You can change your pick before confirming.</li>
+    <li><b>Vote:</b> When you are ready, tap <i>Go to voting</i>. This only opens the vote screen on your own phone; the others stay on the discussion screen. Tap the person you suspect, then <i>Confirm my vote</i>. Until everyone has voted you can use <i>Change my vote</i>. The votes are counted when the last player confirms.</li>
     <li><b>Tie:</b> If the vote is tied, everyone gives one more clue and you vote again.</li>
     <li><b>Caught:</b> If the chosen player is the imposter, they get <b>1 minute</b> to guess the word out loud.</li>
-    <li><b>Decision:</b> When time is up, the other players vote <i>Got it / Missed it</i>. The majority decides.</li>
+    <li><b>Decision:</b> When time is up, only the host marks <i>Got it / Missed it</i>. Everyone else waits for the result.</li>
   </ol>
 </section>
 
@@ -94,6 +94,7 @@
 <section id="host">
   <h2>What the host can do</h2>
   <ul>
+    <li>Decide <i>Got it / Missed it</i> after hearing a caught imposter's guess.</li>
     <li>Start or cancel rounds and change the rules (word language, categories, number of imposters, whether the imposter sees the category, open/private).</li>
     <li>Remove a player. Their name then shows <i>removed by the host</i>, and their points are kept.</li>
     <li>Approve or reject name change requests.</li>
