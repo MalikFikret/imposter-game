@@ -6,36 +6,80 @@
         ".write": "auth != null && (data.child('meta/host').val() === auth.uid || (!data.exists() && newData.child('meta/host').val() === auth.uid))",
         ".validate": "$code.matches(/^[A-Z2-9]{6}$/)",
         "meta": {
-          ".validate": "newData.child('host').val() === auth.uid && (newData.child('mode').val() === 'online' || newData.child('mode').val() === 'local')"
+          ".validate": "newData.child('host').isString() && (newData.child('mode').val() === 'online' || newData.child('mode').val() === 'local')",
+          "host": {
+            ".write": "auth != null && newData.val() === auth.uid && root.child('secrets').child($code).child('hostPin').exists() && root.child('claims').child($code).child(auth.uid).child('hostPin').val() === root.child('secrets').child($code).child('hostPin').val()"
+          }
+        },
+        "members": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && newData.isString() && root.child('rooms').child($code).child('players').child(newData.val()).child('uid').val() === auth.uid"
+          }
         },
         "players": {
-          "$pid": {
-            ".write": "auth != null && auth.uid === $pid && root.child('rooms').child($code).child('meta').exists()",
+          "$slot": {
+            ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms').child($code).child('meta/mode').val() === 'online'",
             "name": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 20"
+            },
+            "uid": {
+              ".write": "auth != null && newData.val() === auth.uid && root.child('secrets').child($code).child('pins').child($slot).exists() && root.child('claims').child($code).child(auth.uid).child('slot').val() === $slot && root.child('claims').child($code).child(auth.uid).child('pin').val() === root.child('secrets').child($code).child('pins').child($slot).val()"
+            },
+            "online": {
+              ".write": "auth != null && data.parent().child('uid').val() === auth.uid",
+              ".validate": "newData.isBoolean()"
+            },
+            "status": {
+              ".write": "auth != null && data.parent().child('uid').val() === auth.uid && (newData.val() === 'in' || newData.val() === 'left')",
+              ".validate": "newData.val() === 'in' || newData.val() === 'left' || newData.val() === 'kicked'"
+            },
+            "nameReq": {
+              ".write": "auth != null && data.parent().child('uid').val() === auth.uid",
               ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 20"
             }
           }
         },
         "game": {
-          ".write": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()"
+          ".write": "auth != null && root.child('rooms').child($code).child('members').child(auth.uid).exists()"
         },
         "votes": {
-          "$pid": {
-            ".write": "auth != null && auth.uid === $pid && root.child('rooms').child($code).child('players').child(auth.uid).exists()"
+          "$slot": {
+            ".write": "auth != null && root.child('rooms').child($code).child('players').child($slot).child('uid').val() === auth.uid"
           }
         },
         "judges": {
-          "$pid": {
-            ".write": "auth != null && auth.uid === $pid && root.child('rooms').child($code).child('players').child(auth.uid).exists()"
+          "$slot": {
+            ".write": "auth != null && root.child('rooms').child($code).child('players').child($slot).child('uid').val() === auth.uid"
           }
         },
         "history": {
           "$round": {
-            ".write": "auth != null && !data.exists() && root.child('rooms').child($code).child('players').child(auth.uid).exists()"
+            ".write": "auth != null && !data.exists() && root.child('rooms').child($code).child('members').child(auth.uid).exists()"
           }
         },
         "used": {
-          ".write": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()"
+          ".write": "auth != null && root.child('rooms').child($code).child('members').child(auth.uid).exists()"
+        }
+      }
+    },
+    "secrets": {
+      "$code": {
+        "hostPin": {
+          ".write": "auth != null && root.child('rooms').child($code).child('meta/host').val() === auth.uid",
+          ".validate": "newData.isString() && newData.val().matches(/^[0-9]{6}$/)"
+        },
+        "pins": {
+          "$slot": {
+            ".write": "auth != null && root.child('rooms').child($code).child('players').child($slot).child('uid').val() === auth.uid",
+            ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}$/)"
+          }
+        }
+      }
+    },
+    "claims": {
+      "$code": {
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid"
         }
       }
     }

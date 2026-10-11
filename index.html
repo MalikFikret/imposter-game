@@ -179,6 +179,33 @@ input { font: inherit; font-weight: 500; width: 100%; min-width: 0; padding: 12p
 .p-imp { color: var(--imp); } .p-crew { color: var(--crew); }
 
 .toast { position: fixed; inset-inline: 16px; bottom: max(16px, env(safe-area-inset-bottom)); margin-inline: auto; max-width: 448px; padding: 14px 16px; border-radius: 10px; background: var(--fg); color: var(--on-fg); font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.25); z-index: 10; overflow-wrap: anywhere; }
+/* Room shell */
+.room-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.code-chip { font-family: var(--font-mono); font-weight: 700; font-size: 1.15rem; letter-spacing: .14em; padding: 6px 12px; min-height: 40px; border-radius: 8px; background: var(--fg); color: var(--on-fg); }
+.room-sub { color: var(--muted); font-size: .85rem; margin-top: -10px; text-align: center; }
+.tabs { display: flex; gap: 4px; padding: 4px; border-radius: 10px; background: var(--surface); border: 2px solid var(--line); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; }
+.tabs button { flex: 1; min-height: 44px; border-radius: 7px; font-weight: 700; font-size: .95rem; display: inline-flex; align-items: center; justify-content: center; gap: 6px; position: relative; }
+.tabs button[aria-selected="true"] { background: var(--fg); color: var(--on-fg); }
+.tabs .cnt { font-family: var(--font-mono); font-size: .75rem; opacity: .7; }
+.dot-badge { width: 8px; height: 8px; border-radius: 50%; background: var(--imp); position: absolute; top: 6px; inset-inline-end: 8px; }
+.pres { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--line); margin-inline-end: 8px; vertical-align: middle; }
+.pres.on { background: var(--ok); }
+.plist li.away .pname { color: var(--muted); }
+.st { display: inline-block; font-size: .75rem; font-weight: 600; color: var(--muted); margin-inline-start: 6px; }
+.st-out { color: var(--imp); }
+.acts { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.acts .btn.small { min-height: 38px; padding: 6px 10px; font-size: .85rem; }
+.plist li { flex-wrap: wrap; }
+.req { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.namechips { display: flex; flex-wrap: wrap; gap: 6px; }
+.namechip { padding: 6px 12px; border-radius: 999px; background: var(--surface); border: 1.5px solid var(--line); font-weight: 600; }
+.attn { border-color: var(--imp); }
+.pin-in { font-family: var(--font-mono); font-size: 1.3rem; letter-spacing: .4em; text-align: center; }
+.row.nowrap { flex-wrap: nowrap; }
+.row.nowrap .code-in { flex: 1; }
+.btn.auto { width: auto; flex: none; }
+.order li.gone span:first-child { text-decoration: line-through; color: var(--muted); }
+main.stack-lg { gap: 20px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>

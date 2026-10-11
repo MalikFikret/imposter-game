@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getDatabase, ref, onValue, get, set, update, remove, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
+import { getDatabase, ref, onValue, get, set, update, remove, runTransaction, onDisconnect } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { CATS } from './words.js';
 import { STR } from './i18n.js';
 
@@ -18,6 +18,19 @@ const firebaseConfig = {
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
 const db = getDatabase(fb);
+
+/*
+ Data model (Realtime Database)
+ rooms/{code}
+   meta     {host: uid, hostSlot, mode: online|local, pinSet, createdAt}
+   settings {lang, cats[], hint, imps}
+   players/{slot} {name, uid, joinedAt, status: in|left|kicked, online, nameReq}
+   members/{uid} = slot          (which seat a device sits in; used by the rules)
+   game     {phase, round, cat, wi, word, lang, hint, roster[], imps[], order[], pass[], out[], vr, ...}
+   votes/{slot}, judges/{slot}, history/r{n}, used/{cat}/{index}
+ secrets/{code}  {hostPin, pins/{slot}}   never readable by anyone
+ claims/{code}/{uid} {slot, pin, hostPin} write-only proof used to take over a seat or the host role
+*/
 
 // ---------- word bank ----------
 const BANK = {};
@@ -45,6 +58,9 @@ const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 const vkey = g => `${g.round}_${g.vr || 0}`;
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const genCode = () => Array.from({ length: 6 }, () => CODE_CHARS[rnd(CODE_CHARS.length)]).join('');
+const genSlot = () => 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const isPin = (v, n) => new RegExp(`^[0-9]{${n}}$`).test(String(v || ''));
+const ACTIVE = ['play', 'cards', 'discuss', 'vote', 'tie', 'guess', 'judge'];
 let offset = 0;
 const now = () => Date.now() + offset;
 
@@ -52,19 +68,22 @@ const fmt = (s, vars) => String(s).replace(/\{(\w+)\}/g, (_, k) => (vars && k in
 const t = (k, vars) => fmt((STR[S.ui] && STR[S.ui][k]) ?? STR.tr[k] ?? k, vars);
 const sep = () => (S.ui === 'ar' ? '، ' : ', ');
 const tl = (lang, k, vars) => fmt((STR[lang] && STR[lang][k]) ?? STR.tr[k] ?? k, vars);
+const backArrow = () => (S.ui === 'ar' ? '→' : '←');
 
 // ---------- state ----------
 const S = {
   uid: null, booted: false, ui: ls.get('ui') === 'ar' ? 'ar' : 'tr',
-  view: 'home', code: null, room: null, unsub: null,
+  view: 'home', code: null, room: null, unsub: null, tab: 'game',
   draft: null, editing: false, pick: null, cardOpen: false,
   local: { round: -1, idx: 0, shown: false }, lastKey: null,
   armed: null, toast: '', toastTimer: null, error: '',
-  joinCode: '', joinName: ls.get('name') || '', pending: false, attempted: {}
+  joinCode: '', form: { name: ls.get('name') || '', pin: '', hostPin: '', mode: 'new', slot: '', asHost: false, newName: '' },
+  nameEdit: false, pending: false, attempted: {}, presence: null, connected: false, busy: false
 };
 
 // ---------- auth & boot ----------
 onValue(ref(db, '.info/serverTimeOffset'), s => { offset = s.val() || 0; });
+onValue(ref(db, '.info/connected'), s => { S.connected = !!s.val(); if (S.connected) { S.presence = null; armPresence(); } });
 onAuthStateChanged(auth, u => { if (u) { S.uid = u.uid; boot(); } });
 signInAnonymously(auth).catch(e => { S.error = t('error', { m: esc(e.code || e.message) }); render(); });
 
@@ -79,13 +98,29 @@ function fail(e) { flash(t('error', { m: esc(e && (e.code || e.message) || e) })
 function flash(msg) {
   S.toast = msg; render();
   clearTimeout(S.toastTimer);
-  S.toastTimer = setTimeout(() => { S.toast = ''; render(); }, 2800);
+  S.toastTimer = setTimeout(() => { S.toast = ''; render(); }, 3000);
 }
+const P = path => ref(db, `rooms/${S.code}/${path}`);
 
 // ---------- room data helpers ----------
 const isHost = () => !!S.room && S.room.meta && S.room.meta.host === S.uid;
-const isOnline = () => S.room && S.room.meta && S.room.meta.mode === 'online';
+const isOnline = () => !!S.room && S.room.meta && S.room.meta.mode === 'online';
 const playersOf = r => Object.entries(r.players || {}).map(([id, p]) => ({ id, ...p })).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+function mySlot() {
+  const r = S.room;
+  if (!r || !isOnline() || !r.members) return null;
+  const s = r.members[S.uid];
+  return s && r.players && r.players[s] && r.players[s].uid === S.uid ? s : null;
+}
+const meP = () => { const s = mySlot(); return s ? S.room.players[s] : null; };
+// A player counts as "here" when they have not left and their device is connected
+function isHere(r, slot) {
+  const p = r.players && r.players[slot];
+  if (!p) return false;
+  if (r.meta.mode === 'local') return true;
+  return (p.status || 'in') === 'in' && p.online === true;
+}
+const activeRoster = g => arr(g.roster).filter(p => !arr(g.out).includes(p));
 function nameOf(p) {
   const r = S.room;
   if (!r || !p) return '?';
@@ -97,10 +132,10 @@ function scoresOf(r) {
   const sc = {};
   for (const h of Object.values(r.history || {})) {
     if (!h) continue;
-    const imps = arr(h.imps), roster = arr(h.roster);
+    const imps = arr(h.imps), roster = arr(h.roster), out = arr(h.out);
     roster.forEach(p => { sc[p] = sc[p] || 0; });
     if (h.impWins) imps.forEach(p => { sc[p] = (sc[p] || 0) + 2; });
-    else roster.filter(p => !imps.includes(p)).forEach(p => { sc[p] = (sc[p] || 0) + 1; });
+    else roster.filter(p => !imps.includes(p) && !out.includes(p)).forEach(p => { sc[p] = (sc[p] || 0) + 1; });
   }
   Object.keys(r.players || {}).forEach(p => { sc[p] = sc[p] || 0; });
   return Object.entries(sc).sort((a, b) => b[1] - a[1]);
@@ -111,10 +146,32 @@ function addRecent(code, mode) {
   ls.set('recent', list.slice(0, 8));
 }
 
+// ---------- presence ----------
+// Marks my seat online while this room is open; Firebase flips it to false if the connection drops.
+function armPresence() {
+  const slot = mySlot(), me = meP();
+  if (!S.code || !slot || !S.connected || !me || (me.status || 'in') !== 'in') return;
+  const key = S.code + '/' + slot;
+  if (S.presence === key && me.online === true) return;
+  S.presence = key;
+  const r = P(`players/${slot}/online`);
+  onDisconnect(r).set(false).then(() => set(r, true)).catch(() => { S.presence = null; });
+}
+function dropPresence() {
+  if (!S.presence) return;
+  const [code, slot] = S.presence.split('/');
+  const r = ref(db, `rooms/${code}/players/${slot}/online`);
+  onDisconnect(r).cancel().catch(() => {});
+  set(r, false).catch(() => {});
+  S.presence = null;
+}
+
 // ---------- room lifecycle ----------
 function openRoom(code) {
   if (S.unsub) S.unsub();
-  Object.assign(S, { code, room: null, view: 'room', pick: null, cardOpen: false, editing: false, armed: null });
+  dropPresence();
+  Object.assign(S, { code, room: null, view: 'room', tab: 'game', pick: null, cardOpen: false, editing: false, armed: null, nameEdit: false });
+  S.form.mode = 'new'; S.form.pin = ''; S.form.hostPin = ''; S.form.asHost = false;
   history.replaceState(null, '', '#' + code);
   S.unsub = onValue(ref(db, 'rooms/' + code), snap => {
     const r = snap.val();
@@ -126,6 +183,7 @@ function openRoom(code) {
   render();
 }
 function leaveRoom() {
+  dropPresence();
   if (S.unsub) { S.unsub(); S.unsub = null; }
   Object.assign(S, { code: null, room: null, view: 'home', editing: false, armed: null });
   history.replaceState(null, '', location.pathname + location.search);
@@ -138,6 +196,7 @@ function onRoomChange() {
   if (g.round !== S.local.round) { S.local = { round: g.round, idx: 0, shown: false }; S.pick = null; S.cardOpen = false; }
   const k = vkey(g) + g.phase;
   if (k !== S.lastKey) { S.lastKey = k; S.pick = null; }
+  armPresence();
   autoChecks();
   if (isTyping()) { S.pending = true; return; }
   render();
@@ -147,18 +206,19 @@ function onRoomChange() {
 function autoChecks() {
   const r = S.room, g = r && r.game;
   if (!g) return;
-  const member = isOnline() ? !!(r.players && r.players[S.uid]) : isHost();
+  const member = isOnline() ? !!mySlot() : isHost();
   if (!member) return;
   const once = key => { if (S.attempted[key]) return false; S.attempted[key] = true; return true; };
-  const roster = arr(g.roster);
+  const act = activeRoster(g);
+  const outKey = arr(g.out).length;
   if (isOnline() && g.phase === 'vote') {
     const key = vkey(g), v = r.votes || {};
-    if (roster.length && roster.every(p => v[p] && v[p].key === key) && once('v' + key)) resolveVotes();
+    if (act.length && act.every(p => v[p] && v[p].key === key) && once(`v${key}_${outKey}`)) resolveVotes();
   }
   if (isOnline() && g.phase === 'judge') {
     const j = r.judges || {};
-    const judges = roster.filter(p => p !== g.caught);
-    if (judges.every(p => j[p] && j[p].round === g.round) && once('j' + g.round)) resolveJudge();
+    const judges = act.filter(p => p !== g.caught);
+    if (judges.every(p => j[p] && j[p].round === g.round) && once(`j${g.round}_${outKey}`)) resolveJudge();
   }
   if (g.phase === 'guess' && g.guessEnd && now() >= g.guessEnd && once('g' + g.round)) toJudge();
   if (g.phase === 'result' && !(r.history && r.history['r' + g.round]) && once('h' + g.round)) writeHistory();
@@ -167,22 +227,22 @@ function autoChecks() {
 // Atomic state change on the shared game node. guard(cur) must hold, patch(cur) is merged in.
 async function tx(guard, patch) {
   try {
-    await runTransaction(ref(db, `rooms/${S.code}/game`), cur => {
+    await runTransaction(P('game'), cur => {
       if (!cur || !guard(cur)) return; // abort
       return Object.assign({}, cur, patch(cur));
     });
   } catch (e) { fail(e); }
 }
 
-function caughtPatch(g, pid) {
-  if (arr(g.imps).includes(pid)) return { caught: pid, phase: 'guess', guessEnd: now() + 60000 };
-  return { caught: pid, phase: 'result', impWins: true };
+function caughtPatch(g, slot) {
+  if (arr(g.imps).includes(slot)) return { caught: slot, phase: 'guess', guessEnd: now() + 60000 };
+  return { caught: slot, phase: 'result', impWins: true };
 }
-
 function resolveVotes() {
   const g = S.room.game, key = vkey(g), v = S.room.votes || {};
+  const act = activeRoster(g);
   const counts = {};
-  arr(g.roster).forEach(p => { const x = v[p]; if (x && x.key === key && x.target) counts[x.target] = (counts[x.target] || 0) + 1; });
+  act.forEach(p => { const x = v[p]; if (x && x.key === key && x.target && act.includes(x.target)) counts[x.target] = (counts[x.target] || 0) + 1; });
   const max = Math.max(0, ...Object.values(counts));
   const top = Object.keys(counts).filter(k => counts[k] === max);
   const guard = cur => cur.phase === 'vote' && cur.round === g.round && (cur.vr || 0) === (g.vr || 0);
@@ -192,7 +252,7 @@ function resolveVotes() {
 function resolveJudge() {
   const g = S.room.game, j = S.room.judges || {};
   let yes = 0, no = 0;
-  arr(g.roster).filter(p => p !== g.caught).forEach(p => {
+  activeRoster(g).filter(p => p !== g.caught).forEach(p => {
     const x = j[p];
     if (x && x.round === g.round) { if (x.yes) yes++; else no++; }
   });
@@ -203,28 +263,40 @@ function toJudge() {
   const g = S.room.game;
   return tx(cur => cur.phase === 'guess' && cur.round === g.round, () => ({ phase: 'judge' }));
 }
+// Host confirmed that an absent player is out of this round
+function continueWithout(slot) {
+  const g = S.room.game;
+  return tx(cur => ACTIVE.includes(cur.phase) && cur.round === g.round, cur => {
+    const out = [...new Set([...arr(cur.out), slot])];
+    if (arr(cur.imps).includes(slot)) return { out, phase: 'result', impWins: false, caught: null, impLeft: slot };
+    if (arr(cur.roster).filter(p => !out.includes(p)).length < 3) return { out, phase: 'lobby' };
+    const patch = { out };
+    if (cur.phase === 'tie') { patch.phase = 'vote'; patch.vr = (cur.vr || 0) + 1; patch.tied = null; }
+    return patch;
+  });
+}
 async function writeHistory() {
   const r = S.room, g = r.game;
   const names = {};
-  arr(g.roster).forEach(p => { names[p] = (r.players && r.players[p] && r.players[p].name) || '?'; });
+  arr(g.roster).forEach(p => { names[p] = nameOf(p); });
   const entry = {
     round: g.round, cat: g.cat, word: g.word, lang: g.lang || 'tr',
-    roster: arr(g.roster), imps: arr(g.imps), caught: g.caught || null,
+    roster: arr(g.roster), imps: arr(g.imps), out: arr(g.out), caught: g.caught || null,
     impWins: !!g.impWins, names, at: now()
   };
-  try { await set(ref(db, `rooms/${S.code}/history/r${g.round}`), entry); }
+  try { await set(P(`history/r${g.round}`), entry); }
   catch { /* another player already saved this round */ }
 }
 
 async function startRound() {
   const r = S.room, st = r.settings || {}, g = r.game || {};
-  const roster = playersOf(r).map(p => p.id);
+  const roster = playersOf(r).filter(p => isHere(r, p.id)).map(p => p.id);
   if (roster.length < 3) return flash(t('needMin'));
   const k = (st.imps === 2 && roster.length >= 5) ? 2 : 1;
   let cats = arr(st.cats).filter(c => BANK[c]);
   if (!cats.length) cats = CAT_KEYS.slice();
   const used = r.used || {};
-  let avail = [];
+  const avail = [];
   cats.forEach(c => BANK[c].list.forEach((w, i) => { if (!(used[c] && used[c][i])) avail.push([c, i]); }));
   const updates = {};
   let reset = false;
@@ -254,6 +326,7 @@ async function startRound() {
   else updates[`used/${cat}/${wi}`] = true;
   try {
     await update(ref(db, 'rooms/' + S.code), updates);
+    S.tab = 'game';
     if (reset) flash(t('wordsReset'));
   } catch (e) { fail(e); }
 }
@@ -261,7 +334,7 @@ async function startRound() {
 // ---------- create / join / rules ----------
 function newDraft(mode) {
   return {
-    mode, lang: S.ui, cats: CAT_KEYS.slice(), hint: true, imps: 1, name: S.joinName || '',
+    mode, lang: S.ui, cats: CAT_KEYS.slice(), hint: true, imps: 1, name: S.form.name || '', pin: '', hostPin: '',
     players: [1, 2, 3, 4].map(i => ({ id: 'p' + i, name: t('playerN', { n: i }) }))
   };
 }
@@ -280,47 +353,91 @@ function localPlayersMap(d) {
   return m;
 }
 
-async function createRoom() {
+async function guarded(fn) {
+  if (S.busy) return;
+  S.busy = true; render();
+  try { await fn(); } catch (e) { fail(e); } finally { S.busy = false; render(); }
+}
+
+function createRoom() {
   const d = S.draft;
   const name = (d.name || '').trim().slice(0, 20);
   if (d.mode === 'online' && !name) return flash(t('needName'));
-  try {
+  if (d.mode === 'online' && !isPin(d.pin, 4)) return flash(t('badMyPin'));
+  if (!isPin(d.hostPin, 6)) return flash(t('badHostPin'));
+  return guarded(async () => {
     let code = genCode();
     for (let i = 0; i < 5; i++) {
       if (!(await get(ref(db, `rooms/${code}/meta`))).exists()) break;
       code = genCode();
     }
-    let players;
+    const room = { settings: settingsOf(d), game: { phase: 'lobby', round: 0 } };
+    let slot = null;
     if (d.mode === 'online') {
-      players = { [S.uid]: { name, joinedAt: now() } };
-      S.joinName = name; ls.set('name', name);
-    } else players = localPlayersMap(d);
-    await set(ref(db, 'rooms/' + code), {
-      meta: { host: S.uid, mode: d.mode, createdAt: now() },
-      settings: settingsOf(d), players, game: { phase: 'lobby', round: 0 }
-    });
+      slot = genSlot();
+      room.meta = { host: S.uid, hostSlot: slot, mode: 'online', pinSet: true, createdAt: now() };
+      room.players = { [slot]: { name, uid: S.uid, joinedAt: now(), status: 'in', online: true } };
+      room.members = { [S.uid]: slot };
+      S.form.name = name; ls.set('name', name);
+    } else {
+      room.meta = { host: S.uid, mode: 'local', pinSet: true, createdAt: now() };
+      room.players = localPlayersMap(d);
+    }
+    await set(ref(db, 'rooms/' + code), room);
+    await set(ref(db, `secrets/${code}/hostPin`), d.hostPin);
+    if (slot) await set(ref(db, `secrets/${code}/pins/${slot}`), d.pin);
     openRoom(code);
-  } catch (e) { fail(e); }
+  });
 }
 
-async function joinRoom(rawCode, rawName) {
-  const code = String(rawCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const name = String(rawName || '').trim().slice(0, 20);
-  if (!/^[A-Z2-9]{6}$/.test(code)) return flash(t('badCode'));
-  try {
-    const m = await get(ref(db, `rooms/${code}/meta`));
-    if (!m.exists()) return flash(t('notFound'));
-    const meta = m.val();
-    if (meta.mode === 'online') {
-      const me = await get(ref(db, `rooms/${code}/players/${S.uid}`));
-      if (!me.exists()) {
-        if (!name) return flash(t('needName'));
-        await set(ref(db, `rooms/${code}/players/${S.uid}`), { name, joinedAt: now() });
-      }
-      if (name) { S.joinName = name; ls.set('name', name); }
+function joinNew() {
+  const f = S.form, r = S.room;
+  const name = f.name.trim().slice(0, 20);
+  if (!name) return flash(t('needName'));
+  if (!isPin(f.pin, 4)) return flash(t('badMyPin'));
+  const taken = playersOf(r).some(p => (p.name || '').trim().toLocaleLowerCase() === name.toLocaleLowerCase());
+  if (taken) return flash(t('nameTaken'));
+  return guarded(async () => {
+    const slot = genSlot();
+    await set(P(`players/${slot}`), { name, uid: S.uid, joinedAt: now(), status: 'in', online: true });
+    await set(P(`members/${S.uid}`), slot);
+    await set(ref(db, `secrets/${S.code}/pins/${slot}`), f.pin);
+    S.form.name = name; ls.set('name', name); S.form.pin = '';
+  });
+}
+
+// Take over an existing seat from another device by proving its PIN (and optionally the host PIN)
+function joinReturning() {
+  const f = S.form;
+  if (!f.slot) return flash(t('pickPlayer'));
+  if (!isPin(f.pin, 4)) return flash(t('badMyPin'));
+  if (f.asHost && !isPin(f.hostPin, 6)) return flash(t('badHostPin'));
+  return guarded(async () => {
+    const claimRef = ref(db, `claims/${S.code}/${S.uid}`);
+    await set(claimRef, f.asHost ? { slot: f.slot, pin: f.pin, hostPin: f.hostPin } : { slot: f.slot, pin: f.pin });
+    try { await set(P(`players/${f.slot}/uid`), S.uid); }
+    catch { await remove(claimRef).catch(() => {}); flash(t('wrongPin')); return; }
+    await set(P(`members/${S.uid}`), f.slot);
+    await update(P(`players/${f.slot}`), { status: 'in', online: true });
+    if (f.asHost) {
+      try { await set(P('meta/host'), S.uid); } catch { flash(t('wrongHostPin')); }
     }
-    if (S.code !== code) openRoom(code); else render();
-  } catch (e) { fail(e); }
+    await remove(claimRef).catch(() => {});
+    S.form.pin = ''; S.form.hostPin = '';
+  });
+}
+
+// Host role only (single-phone rooms)
+function claimHost() {
+  const f = S.form;
+  if (!isPin(f.hostPin, 6)) return flash(t('badHostPin'));
+  return guarded(async () => {
+    const claimRef = ref(db, `claims/${S.code}/${S.uid}`);
+    await set(claimRef, { hostPin: f.hostPin });
+    try { await set(P('meta/host'), S.uid); } catch { flash(t('wrongPin')); }
+    await remove(claimRef).catch(() => {});
+    S.form.hostPin = '';
+  });
 }
 
 async function saveRules() {
@@ -329,6 +446,35 @@ async function saveRules() {
   if (S.room.meta.mode === 'local') updates.players = localPlayersMap(d);
   try { await update(ref(db, 'rooms/' + S.code), updates); S.editing = false; render(); }
   catch (e) { fail(e); }
+}
+
+async function transferHost(slot) {
+  const p = S.room.players[slot];
+  if (!p || !p.uid) return;
+  try {
+    await remove(ref(db, `secrets/${S.code}/hostPin`));
+    await update(P('meta'), { host: p.uid, hostSlot: slot, pinSet: false });
+    flash(t('transferred'));
+  } catch (e) { fail(e); }
+}
+
+function saveNewHostPin() {
+  if (!isPin(S.form.hostPin, 6)) return flash(t('badHostPin'));
+  return guarded(async () => {
+    await set(ref(db, `secrets/${S.code}/hostPin`), S.form.hostPin);
+    await update(P('meta'), { pinSet: true });
+    S.form.hostPin = '';
+    flash(t('pinSaved'));
+  });
+}
+
+async function leaveSeat() {
+  const slot = mySlot();
+  if (!slot) return leaveRoom();
+  if (isHost()) return flash(t('hostMustTransfer'));
+  dropPresence();
+  try { await update(P(`players/${slot}`), { status: 'left', online: false }); } catch (e) { fail(e); }
+  leaveRoom();
 }
 
 async function shareLink() {
@@ -346,20 +492,24 @@ function render() {
   document.documentElement.lang = S.ui;
   document.documentElement.dir = S.ui === 'ar' ? 'rtl' : 'ltr';
   document.title = S.code ? `${S.code} · ${t('appName')}` : t('appName');
-  let h = header();
-  if (!S.uid) h += `<p class="panel muted">${S.error || t('connecting')}</p>`;
-  else if (S.view === 'create') h += viewCreate();
-  else if (S.view === 'room') h += viewRoom();
-  else h += viewHome();
+  let h;
+  if (!S.uid) h = header() + `<p class="panel muted">${S.error || t('connecting')}</p>`;
+  else if (S.view === 'create') h = header() + viewCreate();
+  else if (S.view === 'room') h = viewRoom();
+  else h = header() + viewHome();
   if (S.toast) h += `<div class="toast" role="status">${S.toast}</div>`;
   $app.innerHTML = h;
 }
 
+const langBtn = () => `<button class="chip-btn" data-act="lang" lang="${S.ui === 'ar' ? 'tr' : 'ar'}">${S.ui === 'ar' ? 'Türkçe' : 'العربية'}</button>`;
 function header() {
-  return `<header class="top">
-    <button class="brand" data-act="home" aria-label="${esc(t('appName'))}">${esc(t('appName'))}</button>
-    <button class="chip-btn" data-act="lang" lang="${S.ui === 'ar' ? 'tr' : 'ar'}">${S.ui === 'ar' ? 'Türkçe' : 'العربية'}</button>
-  </header>`;
+  return `<header class="top"><button class="brand" data-act="home">${esc(t('appName'))}</button>${langBtn()}</header>`;
+}
+
+function pinInput(id, field, n, label, help) {
+  return `<label class="field"><span class="label">${esc(label)}</span>
+    <input id="${id}" class="pin-in" ${field} type="password" inputmode="numeric" pattern="[0-9]*" maxlength="${n}" autocomplete="off" dir="ltr">
+    ${help ? `<span class="note">${esc(help)}</span>` : ''}</label>`;
 }
 
 function viewHome() {
@@ -375,11 +525,10 @@ function viewHome() {
   </div>
   <section class="panel stack">
     <h2 class="h2">${esc(t('join'))}</h2>
-    <label class="field"><span class="label">${esc(t('code'))}</span>
-      <input id="jcode" class="code-in" data-field="joinCode" data-enter="join" value="${esc(S.joinCode)}" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123" dir="ltr"></label>
-    <label class="field"><span class="label">${esc(t('yourName'))}</span>
-      <input id="jname" data-field="joinName" data-enter="join" value="${esc(S.joinName)}" maxlength="20" autocomplete="nickname"></label>
-    <button class="btn" data-act="join">${esc(t('joinBtn'))}</button>
+    <div class="row nowrap">
+      <input id="jcode" class="code-in" data-field="joinCode" data-enter="go" value="${esc(S.joinCode)}" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123" dir="ltr" aria-label="${esc(t('code'))}">
+      <button class="btn auto" data-act="go">${esc(t('goRoom'))}</button>
+    </div>
   </section>
   ${recent.length ? `<section class="stack">
     <span class="label">${esc(t('recent'))}</span>
@@ -412,24 +561,181 @@ function rulesForm(d) {
 
 function viewCreate() {
   const d = S.draft;
-  return `<div class="row"><button class="btn ghost small" data-act="home">${S.ui === 'ar' ? '→' : '←'} ${esc(t('back'))}</button></div>
+  return `<div class="row"><button class="btn ghost small" data-act="home">${backArrow()} ${esc(t('back'))}</button></div>
   <h2 class="title">${esc(d.mode === 'local' ? t('createLocal') : t('createOnline'))}</h2>
   <div class="stack-lg">
-    ${d.mode === 'online' ? `<label class="field"><span class="label">${esc(t('yourName'))}</span><input id="cname" data-draft="name" value="${esc(d.name)}" maxlength="20" autocomplete="nickname"></label>` : ''}
+    ${d.mode === 'online' ? `<label class="field"><span class="label">${esc(t('yourName'))}</span><input id="cname" data-draft="name" value="${esc(d.name)}" maxlength="20" autocomplete="nickname"></label>
+      ${pinInput('cpin', 'data-draft="pin"', 4, t('myPin'), t('myPinHelp'))}` : ''}
+    ${pinInput('chpin', 'data-draft="hostPin"', 6, t('hostPin'), t('hostPinHelp'))}
     ${rulesForm(d)}
-    <button class="btn" data-act="create">${esc(t('create'))}</button>
+    <button class="btn" data-act="create" ${S.busy ? 'disabled' : ''}>${esc(t('create'))}</button>
   </div>`;
 }
 
-function roomBar(r, g) {
-  return `<div class="roombar">
-    <div class="rb-code"><span class="label">${esc(t('roomCode'))}</span><span class="code" dir="ltr">${esc(S.code)}</span></div>
-    <div class="rb-meta">
-      <span class="badge">${esc(r.meta.mode === 'local' ? t('local') : t('online'))}</span>
-      ${g.round ? `<span class="badge">${esc(t('round', { n: g.round }))}</span>` : ''}
-      ${r.meta.mode === 'online' ? `<button class="btn ghost small" data-act="share">${esc(t('shareLink'))}</button>` : ''}
-    </div>
-  </div>`;
+// ----- room shell: compact header + tabs -----
+function viewRoom() {
+  const r = S.room;
+  const top = `<header class="room-top">
+      <button class="btn ghost small" data-act="home">${backArrow()} ${esc(t('mainMenu'))}</button>
+      <button class="code-chip" data-act="share" dir="ltr" aria-label="${esc(t('shareLink'))}">${esc(S.code)}</button>
+      ${langBtn()}
+    </header>`;
+  if (!r) return top + `<p class="panel muted">${esc(t('connecting'))}</p>`;
+  const g = r.game || { phase: 'lobby' };
+  const online = r.meta.mode === 'online';
+  const host = isHost();
+  const sub = `<p class="room-sub">${esc(online ? t('online') : t('local'))}${g.round ? ' · ' + esc(t('round', { n: g.round })) : ''}${host ? ' · ' + esc(t('hostTag')) : ''}</p>`;
+
+  // Not seated yet: join / claim screens
+  if (!online && !host) return top + sub + viewLocalClaim();
+  if (online && !mySlot()) return top + sub + viewJoin(r, g);
+  const me = meP();
+  if (online && me && me.status && me.status !== 'in') {
+    return top + sub + `<section class="panel stack"><p>${esc(me.status === 'kicked' ? t('youKicked') : t('youLeft'))}</p>
+      <button class="btn" data-act="comeBack">${esc(t('comeBack'))}</button></section>`;
+  }
+
+  const ps = playersOf(r);
+  const hereCount = ps.filter(p => isHere(r, p.id)).length;
+  const reqs = host && online ? ps.filter(p => p.nameReq).length : 0;
+  const tabs = `<nav class="tabs" role="tablist">
+    ${[['game', t('tabGame')], ['players', `${t('tabPlayers')} <span class="cnt">${online ? hereCount + '/' : ''}${ps.length}</span>${reqs ? '<span class="dot-badge"></span>' : ''}`], ['scores', t('tabScores')]]
+      .map(([k, label]) => `<button role="tab" data-act="tab" data-v="${k}" aria-selected="${S.tab === k}">${k === 'players' ? label : esc(label)}</button>`).join('')}
+  </nav>`;
+
+  let body;
+  if (S.editing) {
+    body = `<section class="stack-lg"><h2 class="h2">${esc(t('editRules'))}</h2>${rulesForm(S.draft)}
+      <div class="row two"><button class="btn" data-act="saveRules">${esc(t('save'))}</button><button class="btn ghost" data-act="cancelEdit">${esc(t('cancel'))}</button></div></section>`;
+  } else if (S.tab === 'players') body = viewPlayers(r, g, host);
+  else if (S.tab === 'scores') body = viewScores(r, host);
+  else body = viewGame(r, g, host);
+  return top + sub + tabs + `<main class="stack-lg">${body}</main>`;
+}
+
+function viewLocalClaim() {
+  return `<section class="panel stack"><p>${esc(t('localClaim'))}</p>
+    ${pinInput('lhpin', 'data-form="hostPin"', 6, t('hostPin'))}
+    <button class="btn" data-act="claimHost" ${S.busy ? 'disabled' : ''}>${esc(t('claimHost'))}</button></section>`;
+}
+
+function viewJoin(r, g) {
+  const f = S.form, ps = playersOf(r);
+  let h = `<div class="seg">
+    <button data-act="jmode" data-v="new" aria-pressed="${f.mode === 'new'}">${esc(t('newPlayer'))}</button>
+    <button data-act="jmode" data-v="back" aria-pressed="${f.mode === 'back'}">${esc(t('returning'))}</button></div>`;
+  if (ACTIVE.includes(g.phase)) h += `<p class="note">${esc(t('lateJoin'))}</p>`;
+  if (f.mode === 'new') {
+    h += `<section class="stack">
+      <label class="field"><span class="label">${esc(t('yourName'))}</span><input id="jname" data-form="name" data-enter="joinNew" value="${esc(f.name)}" maxlength="20" autocomplete="nickname"></label>
+      ${pinInput('jpin', 'data-form="pin" data-enter="joinNew"', 4, t('myPin'), t('myPinHelp'))}
+      <button class="btn" data-act="joinNew" ${S.busy ? 'disabled' : ''}>${esc(t('joinBtn'))}</button></section>`;
+  } else {
+    h += `<section class="stack"><span class="label">${esc(t('whoAreYou'))}</span>
+      <div class="stack">${ps.map(p => `<button class="vote" data-act="jslot" data-p="${esc(p.id)}" aria-pressed="${f.slot === p.id}"><span>${esc(p.name)}</span><span class="tick" aria-hidden="true">${f.slot === p.id ? '✓' : ''}</span></button>`).join('')}</div>
+      ${pinInput('rpin', 'data-form="pin"', 4, t('myPin'))}
+      <button class="toggle" data-act="jhost" aria-pressed="${f.asHost}"><span class="toggle-txt"><b>${esc(t('iAmHost'))}</b></span><span class="sw" aria-hidden="true"></span></button>
+      ${f.asHost ? pinInput('rhpin', 'data-form="hostPin"', 6, t('hostPin')) : ''}
+      <button class="btn" data-act="joinBack" ${S.busy ? 'disabled' : ''}>${esc(t('joinBtn'))}</button></section>`;
+  }
+  return h;
+}
+
+// ----- Players tab -----
+function statusLabel(r, p) {
+  if (r.meta.mode === 'local') return '';
+  const st = p.status || 'in';
+  if (st === 'kicked') return `<span class="st st-out">${esc(t('statusKicked'))}</span>`;
+  if (st === 'left') return `<span class="st st-out">${esc(t('statusLeft'))}</span>`;
+  if (p.online !== true) return `<span class="st">${esc(t('statusOffline'))}</span>`;
+  return '';
+}
+function viewPlayers(r, g, host) {
+  const online = isOnline(), ps = playersOf(r), mine = mySlot();
+  let h = '';
+  if (host && online) {
+    const reqs = ps.filter(p => p.nameReq);
+    if (reqs.length) {
+      h += `<section class="panel stack"><span class="label">${esc(t('nameReqs'))}</span>${reqs.map(p => `<div class="req">
+        <span><span class="muted">${esc(p.name)}</span> ${backArrow() === '←' ? '→' : '←'} <b>${esc(p.nameReq)}</b></span>
+        <span class="row"><button class="btn small" data-act="approveName" data-p="${esc(p.id)}">${esc(t('approve'))}</button>
+        <button class="btn ghost small" data-act="rejectName" data-p="${esc(p.id)}">${esc(t('reject'))}</button></span></div>`).join('')}</section>`;
+    }
+  }
+  h += `<ul class="plist">${ps.map(p => {
+    const here = isHere(r, p.id);
+    const st = p.status || 'in';
+    const isMe = p.id === mine;
+    const acts = [];
+    if (host && online && !isMe && st === 'in') {
+      acts.push(`<button class="btn ghost small" data-act="kick" data-p="${esc(p.id)}">${esc(S.armed === 'kick:' + p.id ? t('sure') : t('kick'))}</button>`);
+      if (p.online === true) acts.push(`<button class="btn ghost small" data-act="transfer" data-p="${esc(p.id)}">${esc(S.armed === 'transfer:' + p.id ? t('sure') : t('transfer'))}</button>`);
+    }
+    return `<li class="${here ? '' : 'away'}">
+      <span class="pname">${online ? `<span class="pres ${here ? 'on' : ''}" aria-hidden="true"></span>` : ''}${esc(p.name)}
+        ${online && p.id === r.meta.hostSlot ? `<span class="tag">${esc(t('hostTag'))}</span>` : ''}
+        ${isMe ? `<span class="tag">${esc(t('you'))}</span>` : ''}
+        ${statusLabel(r, p)}</span>
+      ${acts.length ? `<span class="row acts">${acts.join('')}</span>` : ''}</li>`;
+  }).join('')}</ul>`;
+  if (online && mine) {
+    const me = r.players[mine];
+    if (me.nameReq && !host) h += `<p class="note">${t('reqSent', { name: `<b>${esc(me.nameReq)}</b>` })}</p>`;
+    if (S.nameEdit) {
+      h += `<section class="stack"><label class="field"><span class="label">${esc(t('newName'))}</span>
+        <input id="nname" data-form="newName" data-enter="saveName" value="${esc(S.form.newName)}" maxlength="20"></label>
+        <div class="row two"><button class="btn" data-act="saveName">${esc(host ? t('save') : t('sendReq'))}</button><button class="btn ghost" data-act="cancelName">${esc(t('cancel'))}</button></div></section>`;
+    } else h += `<button class="btn ghost small self-start" data-act="editName">${esc(t('changeName'))}</button>`;
+    h += `<button class="btn ghost small danger self-start" data-act="leave">${esc(S.armed === 'leave' ? t('sure') : t('leave'))}</button>`;
+  }
+  if (!online && host) h += `<button class="btn ghost" data-act="edit">${esc(t('editRules'))}</button>`;
+  return h;
+}
+
+// ----- Scores tab -----
+function scoreBoard(r) {
+  const sc = scoresOf(r);
+  return `<div class="scores">${sc.map(([p, n], i) => `<div class="score ${i === 0 && n > 0 ? 'lead' : ''}"><span>${esc(nameOf(p))}</span><b>${n}</b></div>`).join('')}</div>`;
+}
+function viewScores(r, host) {
+  const hist = Object.values(r.history || {}).filter(Boolean).sort((a, b) => b.round - a.round);
+  if (!hist.length) return `<p class="panel muted">${esc(t('noHistory'))}</p>`;
+  return `<section class="stack"><span class="label">${esc(t('scores'))}</span>${scoreBoard(r)}</section>
+    <section class="stack"><span class="label">${esc(t('history'))} · ${hist.length}</span>
+      <ol class="hlist">${hist.map(x => `<li><span class="mono">#${x.round}</span>
+        <b lang="${x.lang === 'ar' ? 'ar' : 'tr'}">${esc(x.word)}</b>
+        <span class="muted">${esc(arr(x.imps).map(p => (x.names && x.names[p]) || nameOf(p)).join(sep()))}</span>
+        <span class="pill ${x.impWins ? 'p-imp' : 'p-crew'}">${esc(x.impWins ? t('impWinShort') : t('crewWinShort'))}</span></li>`).join('')}</ol></section>
+    ${host ? `<button class="btn ghost small danger self-start" data-act="reset">${esc(S.armed === 'reset' ? t('sure') : t('resetScores'))}</button>` : ''}`;
+}
+
+// ----- Game tab -----
+function viewGame(r, g, host) {
+  const online = isOnline();
+  let h = '';
+  if (host && r.meta.pinSet === false) {
+    h += `<section class="panel stack attn"><h2 class="h2">${esc(t('setPinTitle'))}</h2><p class="muted">${esc(t('setPinText'))}</p>
+      ${pinInput('nhpin', 'data-form="hostPin" data-enter="saveHostPin"', 6, t('hostPin'))}
+      <button class="btn" data-act="saveHostPin">${esc(t('save'))}</button></section>`;
+  }
+  // Host decides what happens when someone in the round is gone
+  const absent = online && ACTIVE.includes(g.phase) ? activeRoster(g).filter(p => !isHere(r, p)) : [];
+  if (host) {
+    absent.forEach(p => {
+      h += `<section class="panel stack attn"><b>${esc(t('absentTitle', { name: nameOf(p) }))}</b><p class="muted">${esc(t('absentText'))}</p>
+        <div class="row two"><button class="btn small" data-act="without" data-p="${esc(p)}">${esc(t('continueWithout'))}</button>
+        <button class="btn ghost small danger" data-act="cancelRound">${esc(S.armed === 'cancelRound' ? t('sure') : t('cancelRound'))}</button></div></section>`;
+    });
+  }
+  if (online && ACTIVE.includes(g.phase) && !activeRoster(g).includes(mySlot())) {
+    return h + `<p class="panel">${esc(t('watching'))}</p>`;
+  }
+  const views = online
+    ? { lobby: vLobby, play: vPlay, vote: vVote, tie: vTie, guess: vGuess, judge: vJudge, result: vResult }
+    : { lobby: vLobby, cards: vCards, discuss: vDiscuss, vote: vLocalVote, guess: vGuess, judge: vLocalJudge, result: vResult };
+  h += (views[g.phase] || vLobby)(r, g, host);
+  if (host && ACTIVE.includes(g.phase) && !absent.length) h += `<button class="btn ghost small danger self-start" data-act="cancelRound">${esc(S.armed === 'cancelRound' ? t('sure') : t('cancelRound'))}</button>`;
+  return h;
 }
 
 function rulesSummary(r) {
@@ -443,63 +749,21 @@ function rulesSummary(r) {
   </div>`;
 }
 
-function viewRoom() {
-  const r = S.room;
-  if (!r) return `<p class="panel muted">${esc(t('connecting'))}</p>`;
-  const g = r.game || { phase: 'lobby' };
-  const online = r.meta.mode === 'online';
-  const host = isHost();
-  let h = roomBar(r, g);
-  if (S.editing) {
-    return h + `<section class="panel stack-lg"><h2 class="h2">${esc(t('editRules'))}</h2>${rulesForm(S.draft)}
-      <div class="row"><button class="btn" data-act="saveRules">${esc(t('save'))}</button><button class="btn ghost" data-act="cancelEdit">${esc(t('cancel'))}</button></div></section>`;
-  }
-  if (!online && !host) return h + `<p class="panel">${esc(t('localOnly'))}</p>`;
-  if (online && !(r.players && r.players[S.uid])) return h + viewJoinHere(r, g);
-  const active = !['lobby', 'result'].includes(g.phase);
-  if (online && active && !arr(g.roster).includes(S.uid)) {
-    return h + `<p class="panel">${esc(t('watching'))}</p>` + scoreSection(r);
-  }
-  const views = online
-    ? { lobby: vLobby, play: vPlay, vote: vVote, tie: vTie, guess: vGuess, judge: vJudge, result: vResult }
-    : { lobby: vLobby, cards: vCards, discuss: vDiscuss, vote: vLocalVote, guess: vGuess, judge: vLocalJudge, result: vResult };
-  h += (views[g.phase] || vLobby)(r, g, host);
-  if (host && active) h += `<button class="btn ghost small danger self-start" data-act="cancelRound">${esc(S.armed === 'cancelRound' ? t('sure') : t('cancelRound'))}</button>`;
-  return h;
-}
-
-function viewJoinHere(r, g) {
-  const ps = playersOf(r);
-  return `<section class="panel stack">
-    <h2 class="h2">${esc(t('joinTitle'))}</h2>
-    ${!['lobby', 'result'].includes(g.phase) ? `<p class="note">${esc(t('lateJoin'))}</p>` : ''}
-    <label class="field"><span class="label">${esc(t('yourName'))}</span>
-      <input id="hname" data-field="joinName" data-enter="joinHere" value="${esc(S.joinName)}" maxlength="20" autocomplete="nickname"></label>
-    <button class="btn" data-act="joinHere">${esc(t('joinBtn'))}</button>
-  </section>
-  ${ps.length ? `<section class="stack"><span class="label">${esc(t('players'))} · ${ps.length}</span><ul class="plist">${ps.map(p => `<li><span>${esc(p.name)}</span></li>`).join('')}</ul></section>` : ''}`;
-}
-
 function vLobby(r, g, host) {
   const online = isOnline();
-  const ps = playersOf(r);
-  let h = `<section class="stack"><span class="label">${esc(t('players'))} · ${ps.length}</span>
-    <ul class="plist">${ps.map(p => `<li><span class="pname">${esc(p.name)}
-      ${online && p.id === r.meta.host ? `<span class="tag">${esc(t('hostTag'))}</span>` : ''}
-      ${online && p.id === S.uid ? `<span class="tag">${esc(t('you'))}</span>` : ''}</span>
-      ${host && online && p.id !== S.uid ? `<button class="btn ghost small" data-act="kick" data-p="${esc(p.id)}">${esc(t('kick'))}</button>` : ''}</li>`).join('')}</ul>
-    ${online ? `<p class="muted">${esc(t('waitPlayers'))}</p>` : ''}
-  </section>`;
+  const here = playersOf(r).filter(p => isHere(r, p.id));
+  let h = `<section class="stack"><span class="label">${esc(t('playersIn'))} · ${here.length}</span>
+    <div class="namechips">${here.map(p => `<span class="namechip">${esc(p.name)}</span>`).join('')}</div>
+    ${online ? `<p class="muted">${esc(t('waitPlayers'))}</p>` : ''}</section>`;
   h += rulesSummary(r);
   if (host) {
-    h += `<button class="btn" data-act="start" ${ps.length < 3 ? 'disabled' : ''}>${esc(t('startRound'))}</button>`;
-    if (ps.length < 3) h += `<p class="note">${esc(t('needMin'))}</p>`;
-    h += `<button class="btn ghost" data-act="edit">${esc(t('editRules'))}</button>`;
+    h += `<button class="btn" data-act="start" ${here.length < 3 ? 'disabled' : ''}>${esc(t('startRound'))}</button>`;
+    if (here.length < 3) h += `<p class="note">${esc(t('needMin'))}</p>`;
+    h += `<div class="row two">${online ? `<button class="btn ghost" data-act="share">${esc(t('shareLink'))}</button>` : ''}<button class="btn ghost" data-act="edit">${esc(t('editRules'))}</button></div>`;
   } else {
-    h += `<p class="panel muted">${esc(t('waitHost'))}</p>
-      <button class="btn ghost small self-start" data-act="leave">${esc(S.armed === 'leave' ? t('sure') : t('leave'))}</button>`;
+    h += `<p class="panel muted">${esc(t('waitHost'))}</p>`;
   }
-  return h + scoreSection(r);
+  return h;
 }
 
 function cardBlock(g, isImp, open) {
@@ -512,9 +776,10 @@ function cardBlock(g, isImp, open) {
       <div class="bars" aria-hidden="true"><i></i><i></i><i></i></div>
       <p class="card-note">${esc(tl(L, 'secret'))}</p></div>`;
   }
+  const w = isImp ? tl(L, 'impWord') : g.word;
   return `<div class="card open" ${attrs}>
     <div class="card-cat"><span class="label">${esc(tl(L, 'category'))}</span><span class="cat-name">${esc(catName)}</span></div>
-    <div class="word ${sizeClass(isImp ? tl(L, 'impWord') : g.word)}">${esc(isImp ? tl(L, 'impWord') : g.word)}</div>
+    <div class="word ${sizeClass(w)}">${esc(w)}</div>
     <p class="card-note">${esc(tl(L, isImp ? 'impNote' : 'crewNote'))}</p></div>`;
 }
 // Shrink long words so they fit on one or two lines instead of breaking mid-word
@@ -523,34 +788,37 @@ function sizeClass(w) {
   return longest > 11 ? 'xlong' : longest > 8 ? 'long' : '';
 }
 function myCard(g) {
-  const isImp = arr(g.imps).includes(S.uid);
+  const isImp = arr(g.imps).includes(mySlot());
   return `<section class="stack">${cardBlock(g, isImp, S.cardOpen)}
     <button class="btn ghost" data-act="toggleCard">${esc(S.cardOpen ? t('hideCard') : t('showCard'))}</button></section>`;
 }
 function orderBlock(g) {
-  const o = arr(g.order);
+  const o = arr(g.order), out = arr(g.out);
   return `<section class="stack"><span class="label">${esc(t('order'))}</span>
-    <ol class="order">${o.map((p, i) => `<li class="${i === 0 ? 'first' : ''}"><span>${esc(nameOf(p))}</span>${i === 0 ? `<span class="tag">${esc(t('starts'))}</span>` : ''}</li>`).join('')}</ol>
+    <ol class="order">${o.map((p, i) => {
+      const gone = out.includes(p), away = !gone && !isHere(S.room, p);
+      const extra = gone ? `<span class="st st-out">${esc(t('outTag'))}</span>` : away ? `<span class="st">${esc(t('statusOffline'))}</span>` : i === 0 ? `<span class="tag">${esc(t('starts'))}</span>` : '';
+      return `<li class="${i === 0 ? 'first' : ''} ${gone ? 'gone' : ''}"><span>${esc(nameOf(p))}</span>${extra}</li>`;
+    }).join('')}</ol>
     <p class="muted">${esc(t('orderHint'))}</p></section>`;
 }
 
 function vPlay(r, g) {
-  return `<p class="muted">${esc(t('cardHint'))}</p>` + myCard(g) + orderBlock(g) +
-    `<button class="btn" data-act="toVote">${esc(t('toVote'))}</button>`;
+  return myCard(g) + orderBlock(g) + `<button class="btn" data-act="toVote">${esc(t('toVote'))}</button>`;
 }
 
 function vVote(r, g, host) {
-  const key = vkey(g), votes = r.votes || {}, mine = votes[S.uid];
+  const key = vkey(g), votes = r.votes || {}, me = mySlot(), mine = votes[me];
   const done = mine && mine.key === key;
-  const roster = arr(g.roster);
+  const act = activeRoster(g);
   let h = `<section class="stack"><h2 class="h2">${esc(t('whoImp'))}</h2>${g.vr ? `<span class="badge self-start">${esc(t('revoteN', { n: g.vr + 1 }))}</span>` : ''}`;
   if (done) h += `<div class="verdict">${t('voted', { name: esc(nameOf(mine.target)) })}</div>`;
   else {
-    h += `<p class="muted">${esc(t('pickOne'))}</p><div class="stack">${roster.filter(p => p !== S.uid).map(p =>
+    h += `<p class="muted">${esc(t('pickOne'))}</p><div class="stack">${act.filter(p => p !== me).map(p =>
       `<button class="vote" data-act="pick" data-p="${esc(p)}" aria-pressed="${S.pick === p}"><span>${esc(nameOf(p))}</span><span class="tick" aria-hidden="true">${S.pick === p ? '✓' : ''}</span></button>`).join('')}</div>
       <button class="btn" data-act="confirmVote" ${S.pick ? '' : 'disabled'}>${esc(t('confirm'))}</button>`;
   }
-  const waiting = roster.filter(p => !(votes[p] && votes[p].key === key));
+  const waiting = act.filter(p => !(votes[p] && votes[p].key === key));
   h += `<p class="muted">${waiting.length ? t('waitingFor', { names: waiting.map(p => esc(nameOf(p))).join(sep()) }) : esc(t('allIn'))}</p></section>`;
   if (host && waiting.length) h += `<button class="btn ghost small self-start" data-act="countNow">${esc(t('countNow'))}</button>`;
   return h + myCard(g);
@@ -574,10 +842,10 @@ function vGuess(r, g, host) {
 }
 
 function vJudge(r, g, host) {
-  const j = r.judges || {};
-  const judges = arr(g.roster).filter(p => p !== g.caught);
-  const amJudge = judges.includes(S.uid);
-  const answered = j[S.uid] && j[S.uid].round === g.round;
+  const j = r.judges || {}, me = mySlot();
+  const judges = activeRoster(g).filter(p => p !== g.caught);
+  const amJudge = judges.includes(me);
+  const answered = j[me] && j[me].round === g.round;
   let h = `<section class="stack"><h2 class="h2">${esc(t('judgeQ', { name: nameOf(g.caught) }))}</h2>`;
   if (amJudge && !answered) h += `<div class="row two"><button class="btn" data-act="judge" data-v="1">${esc(t('yes'))}</button><button class="btn ghost" data-act="judge" data-v="0">${esc(t('no'))}</button></div>`;
   else h += `<div class="verdict">${esc(amJudge ? t('answered') : t('othersDeciding'))}</div>`;
@@ -591,7 +859,8 @@ function vJudge(r, g, host) {
 function vResult(r, g, host) {
   const imps = arr(g.imps), impWin = !!g.impWins, caught = g.caught;
   let msg;
-  if (!caught || !imps.includes(caught)) msg = t('resWrong', { name: esc(nameOf(caught)) });
+  if (g.impLeft) msg = esc(t('resImpLeft', { name: nameOf(g.impLeft) }));
+  else if (!caught || !imps.includes(caught)) msg = t('resWrong', { name: esc(nameOf(caught)) });
   else msg = esc(impWin ? t('resGuessed') : t('resFailed'));
   const L = g.lang === 'ar' ? 'ar' : 'tr';
   let h = `<section class="verdict ${impWin ? 'imp' : 'crew'} stack">
@@ -604,32 +873,15 @@ function vResult(r, g, host) {
     </section>`;
   if (isOnline()) {
     const key = vkey(g), votes = r.votes || {};
-    h += `<section class="stack"><span class="label">${esc(t('votesTitle'))}</span><ul class="plist small">${arr(g.roster).map(p => {
+    h += `<details class="hist"><summary>${esc(t('votesTitle'))}</summary><ul class="plist small">${activeRoster(g).map(p => {
       const v = votes[p];
       const target = v && v.key === key ? esc(nameOf(v.target)) : `<span class="muted">${esc(t('noVote'))}</span>`;
       return `<li><span>${esc(nameOf(p))}</span><span class="arrow">${S.ui === 'ar' ? '←' : '→'} ${target}</span></li>`;
-    }).join('')}</ul></section>`;
+    }).join('')}</ul></details>`;
   }
   if (host) h += `<button class="btn" data-act="start">${esc(t('newRound'))}</button><button class="btn ghost" data-act="edit">${esc(t('editRules'))}</button>`;
   else h += `<p class="panel muted">${esc(t('waitHost'))}</p>`;
-  return h + scoreSection(r);
-}
-
-function scoreSection(r) {
-  const hist = Object.values(r.history || {}).filter(Boolean).sort((a, b) => b.round - a.round);
-  if (!hist.length) return '';
-  const sc = scoresOf(r);
-  return `<section class="stack">
-    <span class="label">${esc(t('scores'))}</span>
-    <div class="scores">${sc.map(([p, n], i) => `<div class="score ${i === 0 && n > 0 ? 'lead' : ''}"><span>${esc(nameOf(p))}</span><b>${n}</b></div>`).join('')}</div>
-    <details class="hist"><summary>${esc(t('history'))} · ${hist.length}</summary>
-      <ol class="hlist">${hist.map(x => `<li><span class="mono">#${x.round}</span>
-        <b lang="${x.lang === 'ar' ? 'ar' : 'tr'}">${esc(x.word)}</b>
-        <span class="muted">${esc(arr(x.imps).map(p => (x.names && x.names[p]) || nameOf(p)).join(sep()))}</span>
-        <span class="pill ${x.impWins ? 'p-imp' : 'p-crew'}">${esc(x.impWins ? t('impWinShort') : t('crewWinShort'))}</span></li>`).join('')}</ol>
-    </details>
-    ${isHost() ? `<button class="btn ghost small danger self-start" data-act="reset">${esc(S.armed === 'reset' ? t('sure') : t('resetScores'))}</button>` : ''}
-  </section>`;
+  return h + `<section class="stack"><span class="label">${esc(t('scores'))}</span>${scoreBoard(r)}</section>`;
 }
 
 // ----- single-phone views -----
@@ -646,20 +898,20 @@ function vCards(r, g) {
     h += cardBlock(g, isImp, true) +
       `<button class="btn" data-act="lhide">${esc(i === order.length - 1 ? t('hideDone') : t('hideNext'))}</button>`;
   }
-  if (i > 0 || S.local.shown) h += `<button class="btn ghost small self-start" data-act="lback">${S.ui === 'ar' ? '→' : '←'} ${esc(t('back'))}</button>`;
+  if (i > 0 || S.local.shown) h += `<button class="btn ghost small self-start" data-act="lback">${backArrow()} ${esc(t('back'))}</button>`;
   return h;
 }
 function vDiscuss(r, g) {
   return (g.tieNote ? `<div class="verdict imp">${esc(t('tieNote'))}</div>` : '') + orderBlock(g) +
     `<button class="btn" data-act="toVote">${esc(t('toVote'))}</button>
-     <button class="btn ghost small self-start" data-act="backCards">${S.ui === 'ar' ? '→' : '←'} ${esc(t('back'))}</button>`;
+     <button class="btn ghost small self-start" data-act="backCards">${backArrow()} ${esc(t('back'))}</button>`;
 }
 function vLocalVote(r, g) {
   return `<section class="stack"><h2 class="h2">${esc(t('whoImp'))}</h2><p class="muted">${esc(t('localVoteHint'))}</p>
     <div class="stack">${arr(g.roster).map(p => `<button class="vote" data-act="pick" data-p="${esc(p)}" aria-pressed="${S.pick === p}"><span>${esc(nameOf(p))}</span><span class="tick" aria-hidden="true">${S.pick === p ? '✓' : ''}</span></button>`).join('')}</div>
     <button class="btn" data-act="lconfirm" ${S.pick ? '' : 'disabled'}>${esc(t('confirmPick'))}</button>
     <button class="btn ghost" data-act="ltie">${esc(t('tieBtn'))}</button></section>
-    <button class="btn ghost small self-start" data-act="backDiscuss">${S.ui === 'ar' ? '→' : '←'} ${esc(t('back'))}</button>`;
+    <button class="btn ghost small self-start" data-act="backDiscuss">${backArrow()} ${esc(t('back'))}</button>`;
 }
 function vLocalJudge(r, g) {
   return `<section class="stack"><h2 class="h2">${esc(t('judgeQ', { name: nameOf(g.caught) }))}</h2>
@@ -674,11 +926,12 @@ $app.addEventListener('click', e => {
 });
 $app.addEventListener('input', e => {
   const el = e.target, ds = el.dataset;
-  if (ds.field) {
-    let v = el.value;
-    if (ds.field === 'joinCode') { v = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); if (el.value !== v) el.value = v; }
-    S[ds.field] = v;
-  } else if (ds.draft && S.draft) S.draft[ds.draft] = el.value;
+  if (ds.field === 'joinCode') {
+    const v = el.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    if (el.value !== v) el.value = v;
+    S.joinCode = v;
+  } else if (ds.form) S.form[ds.form] = el.value;
+  else if (ds.draft && S.draft) S.draft[ds.draft] = el.value;
   else if (ds.pname != null && S.draft) S.draft.players[+ds.pname].name = el.value;
 });
 $app.addEventListener('keydown', e => {
@@ -690,18 +943,32 @@ $app.addEventListener('focusout', () => {
 
 async function act(a, ds) {
   const r = S.room, g = (r && r.game) || {};
-  const armable = ['reset', 'cancelRound', 'leave'];
-  if (armable.includes(a) && S.armed !== a) { S.armed = a; render(); return; }
+  // Two-tap confirmation for destructive actions
+  const armKey = ['kick', 'transfer'].includes(a) ? `${a}:${ds.p}` : a;
+  if (['reset', 'cancelRound', 'leave', 'kick', 'transfer'].includes(a) && S.armed !== armKey) { S.armed = armKey; render(); return; }
   const wasArmed = S.armed; S.armed = null;
   const d = S.draft;
   switch (a) {
     case 'home': if (S.view === 'room') leaveRoom(); else { S.view = 'home'; render(); } break;
     case 'lang': S.ui = S.ui === 'ar' ? 'tr' : 'ar'; ls.set('ui', S.ui); render(); break;
+    case 'tab': S.tab = ds.v; S.editing = false; render(); break;
     case 'newOnline': case 'newLocal':
       S.draft = newDraft(a === 'newLocal' ? 'local' : 'online'); S.view = 'create'; render(); break;
-    case 'join': joinRoom(S.joinCode, S.joinName); break;
-    case 'joinHere': joinRoom(S.code, S.joinName); break;
+    case 'go':
+      if (!/^[A-Z2-9]{6}$/.test(S.joinCode)) flash(t('badCode')); else openRoom(S.joinCode);
+      break;
     case 'open': openRoom(ds.code); break;
+    case 'jmode': S.form.mode = ds.v; S.form.pin = ''; render(); break;
+    case 'jslot': S.form.slot = ds.p; render(); break;
+    case 'jhost': S.form.asHost = !S.form.asHost; render(); break;
+    case 'joinNew': joinNew(); break;
+    case 'joinBack': joinReturning(); break;
+    case 'claimHost': claimHost(); break;
+    case 'comeBack': {
+      const slot = mySlot();
+      if (slot) update(P(`players/${slot}`), { status: 'in', online: true }).catch(fail);
+      break;
+    }
     case 'addP': if (d.players.length < 10) { d.players.push({ id: 'p' + Date.now().toString(36) + rnd(1000), name: t('playerN', { n: d.players.length + 1 }) }); render(); } break;
     case 'delP': if (d.players.length > 3) { d.players.splice(+ds.i, 1); render(); } break;
     case 'dlang': d.lang = ds.v; render(); break;
@@ -715,10 +982,25 @@ async function act(a, ds) {
     case 'dimps': d.imps = +ds.v; render(); break;
     case 'create': createRoom(); break;
     case 'share': shareLink(); break;
-    case 'kick': remove(ref(db, `rooms/${S.code}/players/${ds.p}`)).catch(fail); break;
-    case 'leave':
-      try { await remove(ref(db, `rooms/${S.code}/players/${S.uid}`)); } catch (e) { fail(e); }
-      leaveRoom(); break;
+    case 'kick': update(P(`players/${ds.p}`), { status: 'kicked' }).catch(fail); break;
+    case 'transfer': transferHost(ds.p); break;
+    case 'saveHostPin': saveNewHostPin(); break;
+    case 'leave': leaveSeat(); break;
+    case 'editName': S.nameEdit = true; S.form.newName = (meP() && meP().name) || ''; render(); break;
+    case 'cancelName': S.nameEdit = false; render(); break;
+    case 'saveName': {
+      const n = S.form.newName.trim().slice(0, 20), slot = mySlot();
+      if (!n || !slot) break;
+      const req = isHost() ? update(P(`players/${slot}`), { name: n, nameReq: null }) : set(P(`players/${slot}/nameReq`), n);
+      req.then(() => { S.nameEdit = false; render(); }).catch(fail);
+      break;
+    }
+    case 'approveName': {
+      const p = r.players[ds.p];
+      if (p && p.nameReq) update(P(`players/${ds.p}`), { name: p.nameReq, nameReq: null }).catch(fail);
+      break;
+    }
+    case 'rejectName': set(P(`players/${ds.p}/nameReq`), null).catch(fail); break;
     case 'start': startRound(); break;
     case 'edit': S.draft = draftFromRoom(); S.editing = true; render(); break;
     case 'cancelEdit': S.editing = false; render(); break;
@@ -729,14 +1011,15 @@ async function act(a, ds) {
     case 'pick': S.pick = ds.p; render(); break;
     case 'confirmVote':
       if (!S.pick) break;
-      set(ref(db, `rooms/${S.code}/votes/${S.uid}`), { key: vkey(g), target: S.pick }).catch(fail); break;
+      set(P(`votes/${mySlot()}`), { key: vkey(g), target: S.pick }).catch(fail); break;
     case 'countNow': resolveVotes(); break;
     case 'revote':
       tx(cur => cur.phase === 'tie' && cur.round === g.round, cur => ({ phase: 'vote', vr: (cur.vr || 0) + 1, tied: null })); break;
     case 'endGuess': toJudge(); break;
     case 'judge':
-      set(ref(db, `rooms/${S.code}/judges/${S.uid}`), { round: g.round, yes: ds.v === '1' }).catch(fail); break;
+      set(P(`judges/${mySlot()}`), { round: g.round, yes: ds.v === '1' }).catch(fail); break;
     case 'forceJudge': resolveJudge(); break;
+    case 'without': continueWithout(ds.p); break;
     case 'reset':
       update(ref(db, 'rooms/' + S.code), { history: null, 'game/phase': 'lobby' }).catch(fail); break;
     case 'cancelRound':
@@ -781,4 +1064,5 @@ setInterval(() => {
   if (left <= 0) autoChecks();
 }, 250);
 
+window.addEventListener('pagehide', dropPresence);
 render();
