@@ -1,5 +1,7 @@
 {
   "rules": {
+    ".read": "auth != null && auth.uid === '__ADMIN_UID__'",
+    ".write": "auth != null && auth.uid === '__ADMIN_UID__'",
     "rooms": {
       "$code": {
         ".read": "auth != null",
@@ -23,7 +25,7 @@
               ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 20"
             },
             "uid": {
-              ".write": "auth != null && newData.val() === auth.uid && root.child('secrets').child($code).child('pins').child($slot).exists() && root.child('claims').child($code).child(auth.uid).child('slot').val() === $slot && root.child('claims').child($code).child(auth.uid).child('pin').val() === root.child('secrets').child($code).child('pins').child($slot).val()"
+              ".write": "auth != null && newData.val() === auth.uid && ((root.child('secrets').child($code).child('pins').child($slot).exists() && root.child('claims').child($code).child(auth.uid).child('slot').val() === $slot && root.child('claims').child($code).child(auth.uid).child('pin').val() === root.child('secrets').child($code).child('pins').child($slot).val()) || ($slot === root.child('rooms').child($code).child('meta/hostSlot').val() && root.child('secrets').child($code).child('hostPin').exists() && root.child('claims').child($code).child(auth.uid).child('hostPin').val() === root.child('secrets').child($code).child('hostPin').val()))"
             },
             "online": {
               ".write": "auth != null && data.parent().child('uid').val() === auth.uid",
@@ -81,6 +83,16 @@
         "$uid": {
           ".write": "auth != null && auth.uid === $uid"
         }
+      }
+    },
+    "publicRooms": {
+      ".read": "auth != null",
+      ".indexOn": [
+        "updatedAt"
+      ],
+      "$code": {
+        ".write": "auth != null && root.child('rooms').child($code).child('meta/host').val() === auth.uid && root.child('rooms').child($code).child('meta/mode').val() === 'online'",
+        ".validate": "newData.hasChildren(['updatedAt'])"
       }
     }
   }

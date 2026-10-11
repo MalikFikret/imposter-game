@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getDatabase, ref, onValue, get, set, update, remove, runTransaction, onDisconnect } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
+import { getDatabase, ref, onValue, get, set, update, remove, runTransaction, onDisconnect, query, orderByChild, limitToLast } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { CATS } from './words.js';
 import { STR } from './i18n.js';
 
@@ -28,7 +28,8 @@ const db = getDatabase(fb);
    members/{uid} = slot          (which seat a device sits in; used by the rules)
    game     {phase, round, cat, wi, word, lang, hint, roster[], imps[], order[], pass[], out[], vr, ...}
    votes/{slot}, judges/{slot}, history/r{n}, used/{cat}/{index}
- secrets/{code}  {hostPin, pins/{slot}}   never readable by anyone
+ publicRooms/{code} {hostName, lang, players, phase, updatedAt}   listing of rooms marked public
+ secrets/{code}  {hostPin, pins/{slot}}   never readable by anyone (except the admin)
  claims/{code}/{uid} {slot, pin, hostPin} write-only proof used to take over a seat or the host role
 */
 
@@ -77,7 +78,8 @@ const S = {
   draft: null, editing: false, pick: null, cardOpen: false,
   local: { round: -1, idx: 0, shown: false }, lastKey: null,
   armed: null, toast: '', toastTimer: null, error: '',
-  joinCode: '', form: { name: ls.get('name') || '', pin: '', hostPin: '', mode: 'new', slot: '', asHost: false, newName: '' },
+  joinCode: '', form: { name: ls.get('name') || '', pin: '', hostPin: '', mode: 'new', slot: '', newName: '' },
+  pub: [], pubUnsub: null, lastPublic: null,
   nameEdit: false, pending: false, attempted: {}, presence: null, connected: false, busy: false
 };
 
@@ -166,12 +168,43 @@ function dropPresence() {
   S.presence = null;
 }
 
+// ---------- public room list ----------
+const PUBLIC_MAX_AGE = 12 * 3600 * 1000;
+function startPublicList() {
+  if (S.pubUnsub || !S.uid) return;
+  S.pubUnsub = onValue(query(ref(db, 'publicRooms'), orderByChild('updatedAt'), limitToLast(30)), snap => {
+    const v = snap.val() || {};
+    S.pub = Object.entries(v).map(([code, x]) => ({ code, ...x }))
+      .filter(x => now() - (x.updatedAt || 0) < PUBLIC_MAX_AGE)
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    if (S.view === 'home' && !isTyping()) render();
+  }, () => { S.pub = []; });
+}
+function stopPublicList() { if (S.pubUnsub) { S.pubUnsub(); S.pubUnsub = null; } }
+// The host's device keeps the public listing entry current
+function syncPublic() {
+  const r = S.room;
+  if (!r || !isHost() || !isOnline() || !(r.settings && r.settings.public)) return;
+  const ps = playersOf(r);
+  const g = r.game || {};
+  const hostP = r.meta.hostSlot && r.players && r.players[r.meta.hostSlot];
+  const entry = {
+    hostName: (hostP && hostP.name) || '?', lang: (r.settings && r.settings.lang) || 'tr',
+    players: ps.filter(p => isHere(r, p.id)).length, phase: ACTIVE.includes(g.phase) ? 'playing' : 'lobby'
+  };
+  const key = JSON.stringify(entry);
+  if (key === S.lastPublic) return;
+  S.lastPublic = key;
+  set(ref(db, 'publicRooms/' + S.code), { ...entry, updatedAt: now() }).catch(() => { S.lastPublic = null; });
+}
+
 // ---------- room lifecycle ----------
 function openRoom(code) {
   if (S.unsub) S.unsub();
   dropPresence();
   Object.assign(S, { code, room: null, view: 'room', tab: 'game', pick: null, cardOpen: false, editing: false, armed: null, nameEdit: false });
-  S.form.mode = 'new'; S.form.pin = ''; S.form.hostPin = ''; S.form.asHost = false;
+  S.form.mode = 'new'; S.form.pin = ''; S.form.hostPin = ''; S.lastPublic = null;
+  stopPublicList();
   history.replaceState(null, '', '#' + code);
   S.unsub = onValue(ref(db, 'rooms/' + code), snap => {
     const r = snap.val();
@@ -197,6 +230,7 @@ function onRoomChange() {
   const k = vkey(g) + g.phase;
   if (k !== S.lastKey) { S.lastKey = k; S.pick = null; }
   armPresence();
+  syncPublic();
   autoChecks();
   if (isTyping()) { S.pending = true; return; }
   render();
@@ -334,7 +368,7 @@ async function startRound() {
 // ---------- create / join / rules ----------
 function newDraft(mode) {
   return {
-    mode, lang: S.ui, cats: CAT_KEYS.slice(), hint: true, imps: 1, name: S.form.name || '', pin: '', hostPin: '',
+    mode, lang: S.ui, cats: CAT_KEYS.slice(), hint: true, imps: 1, public: false, name: S.form.name || '', pin: '', hostPin: '',
     players: [1, 2, 3, 4].map(i => ({ id: 'p' + i, name: t('playerN', { n: i }) }))
   };
 }
@@ -342,11 +376,11 @@ function draftFromRoom() {
   const r = S.room, st = r.settings || {};
   return {
     mode: r.meta.mode, lang: st.lang || 'tr', cats: arr(st.cats).length ? arr(st.cats) : CAT_KEYS.slice(),
-    hint: st.hint !== false, imps: st.imps === 2 ? 2 : 1,
+    hint: st.hint !== false, imps: st.imps === 2 ? 2 : 1, public: !!st.public,
     players: playersOf(r).map(p => ({ id: p.id, name: p.name }))
   };
 }
-const settingsOf = d => ({ lang: d.lang, cats: d.cats, hint: d.hint, imps: d.imps });
+const settingsOf = d => ({ lang: d.lang, cats: d.cats, hint: d.hint, imps: d.imps, public: d.mode === 'online' && !!d.public });
 function localPlayersMap(d) {
   const m = {};
   d.players.forEach((p, i) => { m[p.id] = { name: (p.name.trim() || t('playerN', { n: i + 1 })).slice(0, 20), joinedAt: i }; });
@@ -387,6 +421,7 @@ function createRoom() {
     await set(ref(db, `secrets/${code}/hostPin`), d.hostPin);
     if (slot) await set(ref(db, `secrets/${code}/pins/${slot}`), d.pin);
     openRoom(code);
+    if (S.code === code) stopPublicList();
   });
 }
 
@@ -411,19 +446,15 @@ function joinReturning() {
   const f = S.form;
   if (!f.slot) return flash(t('pickPlayer'));
   if (!isPin(f.pin, 4)) return flash(t('badMyPin'));
-  if (f.asHost && !isPin(f.hostPin, 6)) return flash(t('badHostPin'));
   return guarded(async () => {
     const claimRef = ref(db, `claims/${S.code}/${S.uid}`);
-    await set(claimRef, f.asHost ? { slot: f.slot, pin: f.pin, hostPin: f.hostPin } : { slot: f.slot, pin: f.pin });
+    await set(claimRef, { slot: f.slot, pin: f.pin });
     try { await set(P(`players/${f.slot}/uid`), S.uid); }
     catch { await remove(claimRef).catch(() => {}); flash(t('wrongPin')); return; }
     await set(P(`members/${S.uid}`), f.slot);
     await update(P(`players/${f.slot}`), { status: 'in', online: true });
-    if (f.asHost) {
-      try { await set(P('meta/host'), S.uid); } catch { flash(t('wrongHostPin')); }
-    }
     await remove(claimRef).catch(() => {});
-    S.form.pin = ''; S.form.hostPin = '';
+    S.form.pin = '';
   });
 }
 
@@ -434,7 +465,14 @@ function claimHost() {
   return guarded(async () => {
     const claimRef = ref(db, `claims/${S.code}/${S.uid}`);
     await set(claimRef, { hostPin: f.hostPin });
-    try { await set(P('meta/host'), S.uid); } catch { flash(t('wrongPin')); }
+    try { await set(P('meta/host'), S.uid); }
+    catch { await remove(claimRef).catch(() => {}); flash(t('wrongPin')); return; }
+    const slot = S.room.meta.mode === 'online' && S.room.meta.hostSlot;
+    if (slot && S.room.players && S.room.players[slot]) {
+      await set(P(`players/${slot}/uid`), S.uid);
+      await set(P(`members/${S.uid}`), slot);
+      await update(P(`players/${slot}`), { status: 'in', online: true });
+    }
     await remove(claimRef).catch(() => {});
     S.form.hostPin = '';
   });
@@ -444,8 +482,11 @@ async function saveRules() {
   const d = S.draft;
   const updates = { settings: settingsOf(d) };
   if (S.room.meta.mode === 'local') updates.players = localPlayersMap(d);
-  try { await update(ref(db, 'rooms/' + S.code), updates); S.editing = false; render(); }
-  catch (e) { fail(e); }
+  try {
+    await update(ref(db, 'rooms/' + S.code), updates);
+    if (S.room.meta.mode === 'online' && !d.public) await remove(ref(db, 'publicRooms/' + S.code));
+    S.lastPublic = null; S.editing = false; render();
+  } catch (e) { fail(e); }
 }
 
 async function transferHost(slot) {
@@ -496,7 +537,7 @@ function render() {
   if (!S.uid) h = header() + `<p class="panel muted">${S.error || t('connecting')}</p>`;
   else if (S.view === 'create') h = header() + viewCreate();
   else if (S.view === 'room') h = viewRoom();
-  else h = header() + viewHome();
+  else { h = header() + viewHome(); startPublicList(); }
   if (S.toast) h += `<div class="toast" role="status">${S.toast}</div>`;
   $app.innerHTML = h;
 }
@@ -530,6 +571,13 @@ function viewHome() {
       <button class="btn auto" data-act="go">${esc(t('goRoom'))}</button>
     </div>
   </section>
+  ${S.pub.length ? `<section class="stack">
+    <span class="label">${esc(t('publicRooms'))}</span>
+    <div class="list">${S.pub.map(x => `<button class="row-btn pub" data-act="open" data-code="${esc(x.code)}">
+      <span class="pub-main"><b>${esc(x.hostName || '?')}</b><span class="muted mono" dir="ltr">${esc(x.code)}</span></span>
+      <span class="pub-meta"><span class="badge">${esc(t(x.lang === 'ar' ? 'langAr' : 'langTr'))}</span><span class="badge">${esc(t('playersN', { n: x.players || 0 }))}</span><span class="badge ${x.phase === 'playing' ? 'b-live' : ''}">${esc(x.phase === 'playing' ? t('phasePlaying') : t('phaseLobby'))}</span></span>
+    </button>`).join('')}</div>
+  </section>` : ''}
   ${recent.length ? `<section class="stack">
     <span class="label">${esc(t('recent'))}</span>
     <div class="list">${recent.map(x => `<button class="row-btn" data-act="open" data-code="${esc(x.code)}"><span class="mono" dir="ltr">${esc(x.code)}</span><span class="muted">${esc(x.mode === 'local' ? t('local') : t('online'))}</span></button>`).join('')}</div>
@@ -545,6 +593,9 @@ function rulesForm(d) {
         <input id="pl-${esc(p.id)}" data-pname="${i}" value="${esc(p.name)}" maxlength="20" aria-label="${esc(t('playerN', { n: i + 1 }))}">
         <button class="x" data-act="delP" data-i="${i}" ${d.players.length <= 3 ? 'disabled' : ''} aria-label="${esc(t('remove'))}">×</button></div>`).join('') +
       (d.players.length < 10 ? `<button class="btn ghost small self-start" data-act="addP">${esc(t('addPlayer'))}</button>` : '') + `</div>`;
+  }
+  if (d.mode === 'online') {
+    h += `<button class="toggle" data-act="dpublic" aria-pressed="${!!d.public}"><span class="toggle-txt"><b>${esc(t('publicRoom'))}</b><span class="sub">${esc(t('publicRoomSub'))}</span></span><span class="sw" aria-hidden="true"></span></button>`;
   }
   h += `<div class="stack"><span class="label">${esc(t('wordLang'))}</span><div class="seg">${['tr', 'ar'].map(l =>
     `<button data-act="dlang" data-v="${l}" aria-pressed="${d.lang === l}">${esc(t(l === 'tr' ? 'langTr' : 'langAr'))}</button>`).join('')}</div></div>`;
@@ -621,22 +672,25 @@ function viewLocalClaim() {
 
 function viewJoin(r, g) {
   const f = S.form, ps = playersOf(r);
-  let h = `<div class="seg">
+  let h = `<div class="seg seg3">
     <button data-act="jmode" data-v="new" aria-pressed="${f.mode === 'new'}">${esc(t('newPlayer'))}</button>
-    <button data-act="jmode" data-v="back" aria-pressed="${f.mode === 'back'}">${esc(t('returning'))}</button></div>`;
-  if (ACTIVE.includes(g.phase)) h += `<p class="note">${esc(t('lateJoin'))}</p>`;
+    <button data-act="jmode" data-v="back" aria-pressed="${f.mode === 'back'}">${esc(t('returning'))}</button>
+    <button data-act="jmode" data-v="host" aria-pressed="${f.mode === 'host'}">${esc(t('iAmHost'))}</button></div>`;
+  if (ACTIVE.includes(g.phase) && f.mode === 'new') h += `<p class="note">${esc(t('lateJoin'))}</p>`;
   if (f.mode === 'new') {
     h += `<section class="stack">
       <label class="field"><span class="label">${esc(t('yourName'))}</span><input id="jname" data-form="name" data-enter="joinNew" value="${esc(f.name)}" maxlength="20" autocomplete="nickname"></label>
       ${pinInput('jpin', 'data-form="pin" data-enter="joinNew"', 4, t('myPin'), t('myPinHelp'))}
       <button class="btn" data-act="joinNew" ${S.busy ? 'disabled' : ''}>${esc(t('joinBtn'))}</button></section>`;
-  } else {
+  } else if (f.mode === 'back') {
     h += `<section class="stack"><span class="label">${esc(t('whoAreYou'))}</span>
       <div class="stack">${ps.map(p => `<button class="vote" data-act="jslot" data-p="${esc(p.id)}" aria-pressed="${f.slot === p.id}"><span>${esc(p.name)}</span><span class="tick" aria-hidden="true">${f.slot === p.id ? '✓' : ''}</span></button>`).join('')}</div>
-      ${pinInput('rpin', 'data-form="pin"', 4, t('myPin'))}
-      <button class="toggle" data-act="jhost" aria-pressed="${f.asHost}"><span class="toggle-txt"><b>${esc(t('iAmHost'))}</b></span><span class="sw" aria-hidden="true"></span></button>
-      ${f.asHost ? pinInput('rhpin', 'data-form="hostPin"', 6, t('hostPin')) : ''}
+      ${pinInput('rpin', 'data-form="pin" data-enter="joinBack"', 4, t('myPin'))}
       <button class="btn" data-act="joinBack" ${S.busy ? 'disabled' : ''}>${esc(t('joinBtn'))}</button></section>`;
+  } else {
+    h += `<section class="stack"><p class="muted">${esc(t('hostReturnText'))}</p>
+      ${pinInput('hpin', 'data-form="hostPin" data-enter="claimHost"', 6, t('hostPin'))}
+      <button class="btn" data-act="claimHost" ${S.busy ? 'disabled' : ''}>${esc(t('claimHost'))}</button></section>`;
   }
   return h;
 }
@@ -693,19 +747,38 @@ function viewPlayers(r, g, host) {
 }
 
 // ----- Scores tab -----
-function scoreBoard(r) {
-  const sc = scoresOf(r);
-  return `<div class="scores">${sc.map(([p, n], i) => `<div class="score ${i === 0 && n > 0 ? 'lead' : ''}"><span>${esc(nameOf(p))}</span><b>${n}</b></div>`).join('')}</div>`;
+function statsOf(r) {
+  const st = {};
+  for (const h of Object.values(r.history || {})) {
+    if (!h) continue;
+    const imps = arr(h.imps), out = arr(h.out);
+    arr(h.roster).forEach(p => {
+      const x = st[p] || (st[p] = { played: 0, won: 0, imp: 0 });
+      if (out.includes(p) && !imps.includes(p)) return;
+      x.played++;
+      if (imps.includes(p)) x.imp++;
+      if (imps.includes(p) ? h.impWins : !h.impWins) x.won++;
+    });
+  }
+  return st;
 }
 function viewScores(r, host) {
   const hist = Object.values(r.history || {}).filter(Boolean).sort((a, b) => b.round - a.round);
   if (!hist.length) return `<p class="panel muted">${esc(t('noHistory'))}</p>`;
-  return `<section class="stack"><span class="label">${esc(t('scores'))}</span>${scoreBoard(r)}</section>
+  const sc = scoresOf(r), st = statsOf(r);
+  return `<section class="stack"><span class="label">${esc(t('scores'))}</span>
+    <div class="table-wrap"><table class="tbl">
+      <thead><tr><th>${esc(t('colPlayer'))}</th><th class="num">${esc(t('colPoints'))}</th><th class="num">${esc(t('colWon'))}</th><th class="num">${esc(t('colPlayed'))}</th><th class="num">${esc(t('colImp'))}</th></tr></thead>
+      <tbody>${sc.map(([p, n], i) => { const x = st[p] || { played: 0, won: 0, imp: 0 }; return `<tr class="${i === 0 && n > 0 ? 'lead' : ''}"><td>${esc(nameOf(p))}</td><td class="num"><b>${n}</b></td><td class="num">${x.won}</td><td class="num">${x.played}</td><td class="num">${x.imp}</td></tr>`; }).join('')}</tbody>
+    </table></div></section>
     <section class="stack"><span class="label">${esc(t('history'))} · ${hist.length}</span>
-      <ol class="hlist">${hist.map(x => `<li><span class="mono">#${x.round}</span>
-        <b lang="${x.lang === 'ar' ? 'ar' : 'tr'}">${esc(x.word)}</b>
-        <span class="muted">${esc(arr(x.imps).map(p => (x.names && x.names[p]) || nameOf(p)).join(sep()))}</span>
-        <span class="pill ${x.impWins ? 'p-imp' : 'p-crew'}">${esc(x.impWins ? t('impWinShort') : t('crewWinShort'))}</span></li>`).join('')}</ol></section>
+    <div class="table-wrap"><table class="tbl">
+      <thead><tr><th class="num">${esc(t('colRound'))}</th><th>${esc(t('colWord'))}</th><th>${esc(t('colImposter'))}</th><th>${esc(t('colWinner'))}</th></tr></thead>
+      <tbody>${hist.map(x => `<tr><td class="num">${x.round}</td>
+        <td><b lang="${x.lang === 'ar' ? 'ar' : 'tr'}">${esc(x.word)}</b><span class="sub-cell">${esc((BANK[x.cat] && BANK[x.cat][S.ui]) || '')}</span></td>
+        <td>${esc(arr(x.imps).map(p => nameOf(p)).join(sep()))}</td>
+        <td><span class="pill ${x.impWins ? 'p-imp' : 'p-crew'}">${esc(x.impWins ? t('impWinShort') : t('crewWinShort'))}</span></td></tr>`).join('')}</tbody>
+    </table></div></section>
     ${host ? `<button class="btn ghost small danger self-start" data-act="reset">${esc(S.armed === 'reset' ? t('sure') : t('resetScores'))}</button>` : ''}`;
 }
 
@@ -881,7 +954,7 @@ function vResult(r, g, host) {
   }
   if (host) h += `<button class="btn" data-act="start">${esc(t('newRound'))}</button><button class="btn ghost" data-act="edit">${esc(t('editRules'))}</button>`;
   else h += `<p class="panel muted">${esc(t('waitHost'))}</p>`;
-  return h + `<section class="stack"><span class="label">${esc(t('scores'))}</span>${scoreBoard(r)}</section>`;
+  return h;
 }
 
 // ----- single-phone views -----
@@ -958,9 +1031,9 @@ async function act(a, ds) {
       if (!/^[A-Z2-9]{6}$/.test(S.joinCode)) flash(t('badCode')); else openRoom(S.joinCode);
       break;
     case 'open': openRoom(ds.code); break;
-    case 'jmode': S.form.mode = ds.v; S.form.pin = ''; render(); break;
+    case 'jmode': S.form.mode = ds.v; S.form.pin = ''; S.form.hostPin = ''; render(); break;
     case 'jslot': S.form.slot = ds.p; render(); break;
-    case 'jhost': S.form.asHost = !S.form.asHost; render(); break;
+    case 'dpublic': d.public = !d.public; render(); break;
     case 'joinNew': joinNew(); break;
     case 'joinBack': joinReturning(); break;
     case 'claimHost': claimHost(); break;

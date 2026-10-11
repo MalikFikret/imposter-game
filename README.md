@@ -14,6 +14,8 @@ Arkadaşlarla oynanan kelime ve blöf oyunu. Herkes gizli kelimeyi bilir, sahtek
 - Oylar eşit çıkarsa herkes bir ipucu daha söyler ve tekrar oylanır.
 - Yakalanan sahtekârın kelimeyi tahmin etmek için 1 dakikası vardır. Sonra diğer oyuncular "bildi / bilemedi" diye oylar.
 - Puanlar: ekip kazanırsa ekipteki herkese +1, sahtekâr kazanırsa sahtekâra +2.
+- Odalar özel (sadece kodla) ya da açık (ana menüde listelenir) olabilir.
+- Oda sahibi 6 haneli oda PIN'iyle başka cihazdan geri dönebilir; oyuncular 4 haneli kişisel PIN'le.
 - Bir odada kullanılan kelime, liste bitene kadar tekrar çıkmaz. Puanlar ve tur geçmişi odada saklanır.
 
 ## Dosyalar
@@ -23,6 +25,8 @@ Arkadaşlarla oynanan kelime ve blöf oyunu. Herkes gizli kelimeyi bilir, sahtek
 | `app.js` | Oyun mantığı ve Firebase bağlantısı |
 | `words.js` | Kelime bankası (Türkçe / Arapça). **Sadece sona ekleme yapılır**, sıra değişmez. |
 | `i18n.js` | Arayüz metinleri (TR / AR) |
+| `admin.html`, `admin.js` | Yönetim paneli (Google girişi, sadece kurallarda tanımlı admin hesabı) |
+| `style.css` | Ortak stiller |
 | `database.rules.json` | Firebase Realtime Database güvenlik kuralları (Firebase konsoluna yapıştırılır) |
 
 Altyapı: GitHub Pages (statik sayfa) + Firebase Realtime Database + Firebase anonim giriş.
