@@ -219,15 +219,12 @@ main.stack-lg { gap: 20px; }
 .board .who { width: 100%; }
 .board .nm { display: block; font-weight: 600; overflow-wrap: anywhere; }
 .board tr.lead .nm { font-weight: 800; }
-.board .bar { display: block; height: 4px; margin-top: 7px; border-radius: 2px; background: var(--line); overflow: hidden; }
-.board .bar i { display: block; height: 100%; background: var(--muted); border-radius: 2px; }
-.board tr.lead .bar i { background: var(--crew); }
 .board .minor { color: var(--muted); font-size: .82rem; }
 .board .minor { padding-inline: 5px; }
 .board th.minor { font-size: .6rem; letter-spacing: 0; }
 .board th.pts { color: var(--fg); padding-inline: 6px 14px; letter-spacing: 0; }
 .board td.pts { padding-inline: 6px 14px; }
-.board td.pts b { font-family: var(--font-display); font-weight: 400; font-size: 1.75rem; line-height: 1; color: var(--fg); }
+.board td.pts b { font-family: var(--font-mono); font-weight: 800; font-size: 1.25rem; line-height: 1; color: var(--fg); }
 :root[dir="rtl"] .board td.pts b { font-weight: 800; }
 .board tr.lead td { background: color-mix(in srgb, var(--crew) 7%, transparent); }
 .sub-cell { display: block; color: var(--muted); font-size: .8rem; }
