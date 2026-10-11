@@ -23,7 +23,8 @@ A multilingual party word game for 3–10 players. Everyone gets the same secret
 | Host tools | Rename or delete the room, kick (visible as "removed by the host"), approve name changes, hand over the host role (new host sets a new PIN), confirm whether to continue without a disconnected player or cancel the round. |
 | Presence | Live online/offline dot per player, driven by Firebase `onDisconnect`. |
 | Languages | UI and word lists in Turkish, Arabic (RTL) and English. Each language has its **own** word list per category (not translations). ~1,000 words per language. |
-| Admin | Google sign-in page for the owner: all rooms, live stats, rename/kick players, reset room PIN, toggle public, clear history, delete rooms, purge rooms idle for 30+ days. |
+| Usage stats | Anonymous counters (visits, unique devices, rooms created, rounds played per language/mode, player joins), all-time and per day. Numbers only, no personal data. Shown in the admin panel. |
+| Admin | Google sign-in page for the owner: usage statistics, all rooms, live stats, rename/kick players, reset room PIN, toggle public, clear history, delete rooms, purge rooms idle for 30+ days. |
 
 ## Architecture
 
@@ -56,6 +57,8 @@ rooms/{CODE}                       CODE = 6 chars from A–Z, 2–9 (no 0/O/1/I/
 publicRooms/{CODE}   {name, hostName, lang, players, phase, updatedAt}   listing for public rooms
 secrets/{CODE}       {hostPin, pins/{slot}}    never readable by clients
 claims/{CODE}/{uid}  {slot, pin, hostPin}      write-only proof used to take over a seat/host role
+stats/totals/{key}           all-time counters (visits, devices, rooms, rooms_online, rooms_local, rounds, rounds_<lang>, rounds_online, rounds_local, players)
+stats/daily/{YYYY-MM-DD}/{key}   same counters per day (Turkey time)
 ```
 
 A **seat** (`slot`) is independent from the device identity (`uid`). This is what lets a player continue from another phone: they prove the seat's PIN and the seat is re-pointed to their new `uid`, keeping all their points.
@@ -81,6 +84,7 @@ Phase changes are done with `runTransaction` guarded on the expected phase/round
 | `secrets/` has no read rule | PINs are never readable. Ownership is proven by writing a guess to `claims/` and letting the rule compare it with the secret. |
 | `history/r{n}` create-only | Results are immutable once written. |
 | PIN inputs | Rendered as digit-only text inputs masked with CSS (`-webkit-text-security`), not `type="password"`, so browsers neither offer to save them nor show data-breach warnings for common PINs. |
+| `stats/` | Anyone signed in may only add exactly +1 to a counter (`increment(1)`); nobody but the admin can read the numbers. |
 | Admin | Root read/write only for one Google account UID. |
 
 **Known limitations** (accepted for a friends' party game):
@@ -143,6 +147,12 @@ No code changes are required.
 - Design, development and content: **Malik Fikret**
 - Firebase (Google) for authentication and the realtime database
 - Fonts via Google Fonts: Anton, Cairo, DM Sans, JetBrains Mono (SIL Open Font License)
+
+## Contact
+
+- GitHub: [github.com/MalikFikret](https://github.com/MalikFikret)
+- Email: [malikfikretcontact@gmail.com](mailto:malikfikretcontact@gmail.com)
+- Instagram: [@malikfikret](https://www.instagram.com/malikfikret)
 
 ## License
 

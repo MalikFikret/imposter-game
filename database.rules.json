@@ -100,6 +100,23 @@
         ".write": "auth != null && root.child('rooms').child($code).child('meta/host').val() === auth.uid && root.child('rooms').child($code).child('meta/mode').val() === 'online'",
         ".validate": "newData.hasChildren(['updatedAt'])"
       }
+    },
+    "stats": {
+      "totals": {
+        "$k": {
+          ".write": "auth != null",
+          ".validate": "$k.matches(/^[a-z_]{1,24}$/) && newData.isNumber() && newData.val() === (data.exists() ? data.val() : 0) + 1"
+        }
+      },
+      "daily": {
+        "$day": {
+          ".validate": "$day.matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)",
+          "$k": {
+            ".write": "auth != null",
+            ".validate": "$k.matches(/^[a-z_]{1,24}$/) && newData.isNumber() && newData.val() === (data.exists() ? data.val() : 0) + 1"
+          }
+        }
+      }
     }
   }
 }

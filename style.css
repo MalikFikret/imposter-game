@@ -257,7 +257,11 @@ a.btn { text-decoration: none; }
 .guide details summary { font-weight: 700; min-height: 44px; display: flex; align-items: center; cursor: pointer; }
 .guide details p { padding-bottom: 10px; }
 .guide .tbl { border: 2px solid var(--line); border-radius: 10px; background: var(--surface); }
-.guide-foot { color: var(--muted); font-size: .85rem; text-align: center; padding-top: 12px; border-top: 1px solid var(--line); }
+.guide-foot { color: var(--muted); font-size: .85rem; text-align: center; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
 .room-name { font-size: 1.35rem; font-weight: 800; text-align: center; margin: -6px 0 -14px; overflow-wrap: anywhere; line-height: 1.25; }
 .danger-zone { border-color: var(--imp); margin-top: 8px; }
+.contact { display: flex; flex-direction: column; gap: 8px; }
+.contact a { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 52px; padding: 10px 14px; border-radius: 10px; border: 2px solid var(--line); background: var(--surface); color: var(--fg); text-decoration: none; flex-wrap: wrap; }
+.contact .c-k { font-weight: 800; }
+.contact .c-v { color: var(--muted); font-family: var(--font-mono); font-size: .85rem; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

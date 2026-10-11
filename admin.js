@@ -1,8 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getDatabase, ref, onValue, set, update, remove } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
-import { CATS } from './words.js?v=1.0.4';
-import { LANGS } from './i18n.js?v=1.0.4';
+import { CATS } from './words.js?v=1.0.5';
+import { LANGS } from './i18n.js?v=1.0.5';
 const langName = c => (LANGS.find(l => l.code === c) || LANGS[0]).name;
 
 // Same project as the game, but a separately named app instance so the admin's Google
@@ -23,7 +23,7 @@ const $app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const arr = v => Array.isArray(v) ? v.filter(x => x != null) : (v && typeof v === 'object' ? Object.values(v) : []);
 const DAY = 86400000;
-const S = { user: null, state: 'loading', rooms: {}, sel: null, filter: '', armed: null, toast: '', unsub: null, pin: '', rename: null, renameVal: '' };
+const S = { user: null, state: 'loading', rooms: {}, stats: null, statsUnsub: null, sel: null, filter: '', armed: null, toast: '', unsub: null, pin: '', rename: null, renameVal: '' };
 
 function flash(m) { S.toast = m; render(); setTimeout(() => { S.toast = ''; render(); }, 2800); }
 const fail = e => flash('Hata: ' + esc(e && (e.code || e.message) || e));
@@ -33,6 +33,8 @@ onAuthStateChanged(auth, u => {
   if (S.unsub) { S.unsub(); S.unsub = null; }
   if (!u) { S.state = 'login'; render(); return; }
   S.state = 'loading'; render();
+  if (S.statsUnsub) { S.statsUnsub(); S.statsUnsub = null; }
+  S.statsUnsub = onValue(ref(db, 'stats'), snap => { S.stats = snap.val() || {}; render(); }, () => { S.stats = null; });
   S.unsub = onValue(ref(db, 'rooms'), snap => { S.rooms = snap.val() || {}; S.state = 'ok'; render(); },
     () => { S.state = 'denied'; render(); });
 });
@@ -92,13 +94,39 @@ function render() {
   $app.innerHTML = h;
 }
 
+// Usage counters (stats/totals, stats/daily/YYYY-MM-DD), kept even when rooms are deleted
+const nf = n => Number(n || 0).toLocaleString('tr-TR');
+function viewStats() {
+  const st = S.stats;
+  if (!st) return '';
+  const T = st.totals || {};
+  const days = [];
+  for (let i = 13; i >= 0; i--) days.push(new Date(Date.now() + 3 * 3600 * 1000 - i * DAY).toISOString().slice(0, 10));
+  const D = st.daily || {};
+  const max = Math.max(1, ...days.map(d => (D[d] && D[d].rounds) || 0));
+  return `<section class="stack"><span class="label">Kullanım istatistikleri · tüm zamanlar</span>
+    <section class="stats">
+      <div class="stat"><span class="label">Ziyaret</span><b>${nf(T.visits)}</b></div>
+      <div class="stat"><span class="label">Farklı cihaz</span><b>${nf(T.devices)}</b></div>
+      <div class="stat"><span class="label">Kurulan oda</span><b>${nf(T.rooms)}</b><span class="muted">online ${nf(T.rooms_online)} · tek tel. ${nf(T.rooms_local)}</span></div>
+      <div class="stat"><span class="label">Oynanan tur</span><b>${nf(T.rounds)}</b><span class="muted">TR ${nf(T.rounds_tr)} · AR ${nf(T.rounds_ar)} · EN ${nf(T.rounds_en)}</span></div>
+      <div class="stat"><span class="label">Odaya katılım</span><b>${nf(T.players)}</b><span class="muted">online oyuncu girişi</span></div>
+    </section>
+    <span class="label">Son 14 gün</span>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>Gün</th><th class="num">Ziyaret</th><th class="num">Cihaz</th><th class="num">Oda</th><th class="num">Katılım</th><th>Tur</th></tr></thead><tbody>
+      ${days.slice().reverse().map(d => { const x = D[d] || {}; const r = x.rounds || 0; return `<tr><td class="mono">${d.slice(5)}</td><td class="num">${nf(x.visits)}</td><td class="num">${nf(x.devices)}</td><td class="num">${nf(x.rooms)}</td><td class="num">${nf(x.players)}</td><td><span class="bar"><i style="width:${Math.round(r / max * 100)}%"></i></span><span class="num">${r}</span></td></tr>`; }).join('')}
+    </tbody></table></div>
+    <p class="note">Sayaçlar 1.0.5 sürümüyle başladı; öncesindeki kullanım sayılmadı. "Farklı cihaz" tarayıcı başına bir kez sayılır.</p>
+  </section>`;
+}
+
 function viewList() {
   const all = Object.entries(S.rooms).map(([code, r]) => ({ code, r, last: lastActive(r) })).sort((a, b) => b.last - a.last);
   const f = S.filter.trim().toLocaleLowerCase();
   const list = f ? all.filter(x => x.code.toLowerCase().includes(f) || roomName(x.r).toLocaleLowerCase().includes(f) || hostName(x.r).toLocaleLowerCase().includes(f) || playersOf(x.r).some(p => (p.name || '').toLocaleLowerCase().includes(f))) : all;
   const online = all.reduce((n, x) => n + playersOf(x.r).filter(p => x.r.meta && x.r.meta.mode === 'online' && here(x.r, p)).length, 0);
   const old = all.filter(x => Date.now() - x.last > 30 * DAY);
-  return `<section class="stats">
+  return viewStats() + `<span class="label">Şu anki odalar</span><section class="stats">
       <div class="stat"><span class="label">Toplam oda</span><b>${all.length}</b></div>
       <div class="stat"><span class="label">Son 24 saat</span><b>${all.filter(x => Date.now() - x.last < DAY).length}</b></div>
       <div class="stat"><span class="label">Şu an çevrimiçi</span><b>${online}</b></div>

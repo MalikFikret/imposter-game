@@ -1,8 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getDatabase, ref, onValue, get, set, update, remove, runTransaction, onDisconnect, query, orderByChild, limitToLast } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
-import { CATS } from './words.js?v=1.0.4';
-import { STR, LANGS } from './i18n.js?v=1.0.4';
+import { getDatabase, ref, onValue, get, set, update, remove, runTransaction, onDisconnect, query, orderByChild, limitToLast, increment } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
+import { CATS } from './words.js?v=1.0.5';
+import { STR, LANGS } from './i18n.js?v=1.0.5';
 
 // Public web config. Not a secret: access is enforced by database.rules.json.
 const firebaseConfig = {
@@ -15,7 +15,7 @@ const firebaseConfig = {
   appId: '1:358335009293:web:439ba4c30a8efa69787b44'
 };
 
-const APP_VERSION = '1.0.4';
+const APP_VERSION = '1.0.5';
 const REPO_URL = 'https://github.com/MalikFikret/imposter-game';
 const guideUrl = () => `guide/${['tr', 'ar', 'en'].includes(S.ui) ? S.ui : 'en'}.html`;
 
@@ -112,9 +112,19 @@ onValue(ref(db, '.info/connected'), s => { S.connected = !!s.val(); if (S.connec
 onAuthStateChanged(auth, u => { if (u) { S.uid = u.uid; boot(); } });
 signInAnonymously(auth).catch(e => { S.error = t('error', { m: esc(e.code || e.message) }); render(); });
 
+// ---------- usage counters (numbers only, no personal data; readable by the admin) ----------
+// Day keys use Turkey time (UTC+3, no DST).
+const dayKey = () => new Date(now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
+function track(...keys) {
+  const d = dayKey(), up = {};
+  keys.forEach(k => { up[`stats/totals/${k}`] = increment(1); up[`stats/daily/${d}/${k}`] = increment(1); });
+  update(ref(db), up).catch(() => { /* counters are best-effort */ });
+}
+
 function boot() {
   if (S.booted) return;
   S.booted = true;
+  if (!ls.get('counted')) { ls.set('counted', 1); track('visits', 'devices'); } else track('visits');
   const h = location.hash.replace('#', '').toUpperCase();
   if (/^[A-Z2-9]{6}$/.test(h)) openRoom(h); else render();
 }
@@ -388,6 +398,7 @@ async function startRound() {
   else updates[`used/${usedKey(cat, lang)}/${wi}`] = true;
   try {
     await update(ref(db, 'rooms/' + S.code), updates);
+    track('rounds', `rounds_${lang}`, r.meta.mode === 'local' ? 'rounds_local' : 'rounds_online');
     S.tab = 'game';
     if (reset) flash(t('wordsReset'));
   } catch (e) { fail(e); }
@@ -440,6 +451,7 @@ function createRoom() {
     }
     await set(ref(db, 'rooms/' + code), room);
     await set(ref(db, `secrets/${code}/hostPin`), d.hostPin);
+    track('rooms', d.mode === 'local' ? 'rooms_local' : 'rooms_online');
     S.form.mode = 'new';
     openRoom(code);
     if (S.code === code) stopPublicList();
@@ -460,6 +472,7 @@ function joinNew() {
     await set(ref(db, `secrets/${S.code}/pins/${slot}`), f.pin);
     // The host taking their seat for the first time: remember which seat is the host's
     if (isHost() && !(S.room.meta && S.room.meta.hostSlot)) await update(P('meta'), { hostSlot: slot });
+    track('players');
     S.form.name = name; ls.set('name', name); S.form.pin = '';
   });
 }
@@ -664,6 +677,12 @@ function viewAbout() {
     <dt>${esc(t('languages'))}</dt><dd>${LANGS.map(l => `<span lang="${l.code}">${esc(l.name)}</span>`).join(sep())}</dd>
   </dl>
   <div class="row two"><a class="btn" href="${guideUrl()}">${esc(t('howToPlay'))}</a><a class="btn ghost" href="${REPO_URL}" target="_blank" rel="noopener">${esc(t('sourceCode'))}</a></div>
+  <section class="stack"><h2 class="h2">${esc(t('contactTitle'))}</h2>
+    <div class="contact">
+      <a href="https://github.com/MalikFikret" target="_blank" rel="noopener"><span class="c-k">GitHub</span><span class="c-v" dir="ltr">github.com/MalikFikret</span></a>
+      <a href="mailto:malikfikretcontact@gmail.com"><span class="c-k">${esc(t('email'))}</span><span class="c-v" dir="ltr">malikfikretcontact@gmail.com</span></a>
+      <a href="https://www.instagram.com/malikfikret" target="_blank" rel="noopener"><span class="c-k">Instagram</span><span class="c-v" dir="ltr">@malikfikret</span></a>
+    </div></section>
   <section class="stack"><h2 class="h2">${esc(t('privacyTitle'))}</h2><p class="muted">${esc(t('privacyText'))}</p></section>
   <section class="panel stack rights"><b>${esc(t('rightsLine'))}</b><p class="muted">${esc(t('rightsText'))}</p></section>`;
 }

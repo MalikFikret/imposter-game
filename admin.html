@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Cairo:wght@400;600;800;900&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap">
-<link rel="stylesheet" href="style.css?v=1.0.4">
+<link rel="stylesheet" href="style.css?v=1.0.5">
 <style>
   #app { max-width: 760px; }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
@@ -24,10 +24,13 @@
   .uid { font-family: var(--font-mono); font-size: .85rem; padding: 10px; border-radius: 8px; background: var(--surface); border: 2px dashed var(--line); overflow-wrap: anywhere; user-select: all; }
   .tbl .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .tbl .btn.small { min-height: 34px; padding: 4px 10px; font-size: .82rem; }
+  .stat .muted { font-size: .78rem; }
+  .bar { display: inline-block; width: 90px; height: 8px; border-radius: 4px; background: var(--line); margin-inline-end: 8px; vertical-align: middle; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--crew); }
 </style>
 </head>
 <body>
 <div id="app"><p class="muted">Yükleniyor…</p></div>
-<script type="module" src="admin.js?v=1.0.4"></script>
+<script type="module" src="admin.js?v=1.0.5"></script>
 </body>
 </html>
