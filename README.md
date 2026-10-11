@@ -99,6 +99,7 @@ Phase changes are done with `runTransaction` guarded on the expected phase/round
 | `admin.html`, `admin.js` | Admin panel |
 | `guide/` | How-to-play pages (TR / AR / EN) |
 | `database.rules.json` | Realtime Database security rules (paste into the Firebase console) |
+| `tools/bump-version.py` | Release helper: bumps the version and cache-busting queries |
 | `LICENSE` | Copyright notice |
 
 ## Local development
@@ -116,6 +117,7 @@ python3 -m http.server 8080
 ## Deployment
 
 - **Site:** GitHub Pages serves the `main` branch root. Every push to `main` is live within 1–2 minutes. `.nojekyll` disables Jekyll processing.
+- **Cache busting:** before each release run `python3 tools/bump-version.py X.Y.Z` from the repository root. It updates `APP_VERSION` and the `?v=` query on every local script/stylesheet so browsers fetch the new files instead of cached ones.
 - **Rules:** changes to `database.rules.json` are **not** deployed automatically. Paste the file into *Firebase console → Realtime Database → Rules* and press *Publish*.
 - **Auth:** Anonymous and Google providers must be enabled; `malikfikret.github.io` must be in *Authentication → Settings → Authorized domains*.
 

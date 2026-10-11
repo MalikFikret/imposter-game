@@ -1,8 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getDatabase, ref, onValue, get, set, update, remove, runTransaction, onDisconnect, query, orderByChild, limitToLast } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
-import { CATS } from './words.js';
-import { STR, LANGS } from './i18n.js';
+import { CATS } from './words.js?v=1.0.1';
+import { STR, LANGS } from './i18n.js?v=1.0.1';
 
 // Public web config. Not a secret: access is enforced by database.rules.json.
 const firebaseConfig = {
@@ -15,7 +15,7 @@ const firebaseConfig = {
   appId: '1:358335009293:web:439ba4c30a8efa69787b44'
 };
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
 const REPO_URL = 'https://github.com/MalikFikret/imposter-game';
 const guideUrl = () => `guide/${['tr', 'ar', 'en'].includes(S.ui) ? S.ui : 'en'}.html`;
 
