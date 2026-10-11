@@ -129,7 +129,7 @@ function viewRoom(code, r) {
       <dt>Kuruldu</dt><dd>${r.meta && r.meta.createdAt ? new Date(r.meta.createdAt).toLocaleString('tr-TR') : '—'}</dd>
       <dt>Son hareket</dt><dd>${ago(lastActive(r))}</dd>
       <dt>Durum</dt><dd>${esc(g.phase || 'lobby')}${g.round ? ` · tur ${g.round}` : ''}${g.word ? ` · kelime: <b>${esc(g.word)}</b>` : ''}</dd>
-      <dt>Kurallar</dt><dd>${esc(langName(st.lang))} · ${arr(st.cats).map(c => CATS[c] ? CATS[c].tr : c).join(', ') || 'tüm kategoriler'} · ${st.imps === 2 ? 2 : 1} sahtekâr · ipucu ${st.hint === false ? 'kapalı' : 'açık'}</dd>
+      <dt>Kurallar</dt><dd>${esc(langName(st.lang))} · ${arr(st.cats).map(c => CATS[c] ? CATS[c].names.tr : c).join(', ') || 'tüm kategoriler'} · ${st.imps === 2 ? 2 : 1} sahtekâr · ipucu ${st.hint === false ? 'kapalı' : 'açık'}</dd>
     </dl>
 
     <section class="stack"><span class="label">Oyuncular · ${ps.length}</span>
@@ -144,7 +144,7 @@ function viewRoom(code, r) {
 
     ${hist.length ? `<section class="stack"><span class="label">Tur geçmişi · ${hist.length}</span>
       <div class="table-wrap"><table class="tbl"><thead><tr><th class="num">Tur</th><th>Kelime</th><th>Sahtekâr</th><th>Kazanan</th><th>Zaman</th></tr></thead><tbody>
-      ${hist.map(x => `<tr><td class="num">${x.round}</td><td><b>${esc(x.word)}</b><span class="sub-cell">${esc(CATS[x.cat] ? CATS[x.cat].tr : '')}</span></td><td>${esc(arr(x.imps).map(p => nameOf(r, p)).join(', '))}</td>
+      ${hist.map(x => `<tr><td class="num">${x.round}</td><td><b>${esc(x.word)}</b><span class="sub-cell">${esc(CATS[x.cat] ? CATS[x.cat].names.tr : '')}</span></td><td>${esc(arr(x.imps).map(p => nameOf(r, p)).join(', '))}</td>
         <td><span class="pill ${x.impWins ? 'p-imp' : 'p-crew'}">${x.impWins ? 'sahtekâr' : 'ekip'}</span></td><td class="muted">${ago(x.at)}</td></tr>`).join('')}
       </tbody></table></div></section>` : ''}
 

@@ -37,8 +37,8 @@ const db = getDatabase(fb);
 const BANK = {};
 for (const [key, c] of Object.entries(CATS)) {
   BANK[key] = {
-    names: Object.fromEntries(LANGS.map(l => [l.code, c[l.code] || c.tr])),
-    list: c.words.split(';').map(s => s.trim()).filter(Boolean).map(s => s.split('|').map(x => x.trim()))
+    names: Object.fromEntries(LANGS.map(l => [l.code, (c.names && c.names[l.code]) || c.names.tr])),
+    lists: Object.fromEntries(LANGS.map(l => [l.code, String((c.words && c.words[l.code]) || '').split(';').map(x => x.trim()).filter(Boolean)]))
   };
 }
 const CAT_KEYS = Object.keys(BANK);
@@ -48,7 +48,11 @@ const normLang = c => (LANG[c] ? c : 'tr');
 const isRTL = c => LANG[normLang(c)].dir === 'rtl';
 const langName = c => LANG[normLang(c)].name;
 const catName = (c, lang) => (BANK[c] ? BANK[c].names[normLang(lang)] : c);
-const wordOf = (c, i, lang) => { const w = BANK[c] && BANK[c].list[i]; return w ? (w[LANG[normLang(lang)].idx] || w[0]) : '?'; };
+// Each language has its own independent list per category
+const listOf = (c, lang) => (BANK[c] ? (BANK[c].lists[normLang(lang)].length ? BANK[c].lists[normLang(lang)] : BANK[c].lists.tr) : []);
+const wordOf = (c, i, lang) => listOf(c, lang)[i] || '?';
+// Used-word bookkeeping is per category AND language (Turkish keeps the original key)
+const usedKey = (c, lang) => (normLang(lang) === 'tr' ? c : `${c}_${normLang(lang)}`);
 function detectLang() {
   const saved = ls.get('ui');
   if (LANG[saved]) return saved;
@@ -342,19 +346,19 @@ async function startRound() {
   const roster = playersOf(r).filter(p => isHere(r, p.id)).map(p => p.id);
   if (roster.length < 3) return flash(t('needMin'));
   const k = (st.imps === 2 && roster.length >= 5) ? 2 : 1;
+  const lang = normLang(st.lang);
   let cats = arr(st.cats).filter(c => BANK[c]);
   if (!cats.length) cats = CAT_KEYS.slice();
   const used = r.used || {};
   const avail = [];
-  cats.forEach(c => BANK[c].list.forEach((w, i) => { if (!(used[c] && used[c][i])) avail.push([c, i]); }));
+  cats.forEach(c => { const u = used[usedKey(c, lang)]; listOf(c, lang).forEach((w, i) => { if (!(u && u[i])) avail.push([c, i]); }); });
   const updates = {};
   let reset = false;
   if (!avail.length) {
     reset = true;
-    cats.forEach(c => { BANK[c].list.forEach((w, i) => avail.push([c, i])); updates['used/' + c] = null; });
+    cats.forEach(c => { listOf(c, lang).forEach((w, i) => avail.push([c, i])); updates['used/' + usedKey(c, lang)] = null; });
   }
   const [cat, wi] = pickOne(avail);
-  const lang = normLang(st.lang);
   const word = wordOf(cat, wi, lang);
   const imps = shuffle(roster).slice(0, k);
   const crew = roster.filter(p => !imps.includes(p));
@@ -371,8 +375,8 @@ async function startRound() {
     round: (g.round || 0) + 1, cat, wi, word, lang, hint: st.hint !== false,
     roster, imps, order, pass, vr: 0, startedAt: now()
   };
-  if (reset) updates['used/' + cat] = { [wi]: true };
-  else updates[`used/${cat}/${wi}`] = true;
+  if (reset) updates['used/' + usedKey(cat, lang)] = { [wi]: true };
+  else updates[`used/${usedKey(cat, lang)}/${wi}`] = true;
   try {
     await update(ref(db, 'rooms/' + S.code), updates);
     S.tab = 'game';
@@ -617,11 +621,11 @@ function rulesForm(d) {
     h += `<button class="toggle" data-act="dpublic" aria-pressed="${!!d.public}"><span class="toggle-txt"><b>${esc(t('publicRoom'))}</b><span class="sub">${esc(t('publicRoomSub'))}</span></span><span class="sw" aria-hidden="true"></span></button>`;
   }
   h += `<div class="stack"><span class="label">${esc(t('wordLang'))}</span><div class="lang-opts">${LANGS.map(l =>
-    `<button data-act="dlang" data-v="${l.code}" aria-pressed="${normLang(d.lang) === l.code}"><span class="lo-name" lang="${l.code}">${esc(l.name)}</span><span class="lo-ex" lang="${l.code}">${esc(wordOf('animals', 0, l.code))} · ${esc(wordOf('food', 64, l.code))}</span></button>`).join('')}</div></div>`;
+    `<button data-act="dlang" data-v="${l.code}" aria-pressed="${normLang(d.lang) === l.code}"><span class="lo-name" lang="${l.code}">${esc(l.name)}</span><span class="lo-ex" lang="${l.code}">${esc(wordOf('animals', 0, l.code))} · ${esc(wordOf('food', 0, l.code))}</span></button>`).join('')}</div></div>`;
   const all = d.cats.length === CAT_KEYS.length;
   h += `<div class="stack"><span class="label">${esc(t('cats'))}</span><div class="chips">
     <button class="chip" data-act="dall" aria-pressed="${all}">${esc(t('all'))}</button>
-    ${CAT_KEYS.map(c => `<button class="chip" data-act="dcat" data-c="${c}" aria-pressed="${d.cats.includes(c)}">${esc(catName(c, S.ui))} <span class="cnt">${BANK[c].list.length}</span></button>`).join('')}
+    ${CAT_KEYS.map(c => `<button class="chip" data-act="dcat" data-c="${c}" aria-pressed="${d.cats.includes(c)}">${esc(catName(c, S.ui))} <span class="cnt">${listOf(c, d.lang).length}</span></button>`).join('')}
   </div></div>`;
   h += `<button class="toggle" data-act="dhint" aria-pressed="${d.hint}"><span class="toggle-txt"><b>${esc(t('hint'))}</b><span class="sub">${esc(t('hintSub'))}</span></span><span class="sw" aria-hidden="true"></span></button>`;
   h += `<div class="stack"><span class="label">${esc(t('imps'))}</span><div class="seg">${[1, 2].map(n =>

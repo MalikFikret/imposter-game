@@ -1,6 +1,6 @@
 // UI strings. {name}-style placeholders are filled by fmt(); values passed in must already be HTML-escaped.
-// Supported languages. Order matters: it is also the column order in words.js.
-// To add a language: add it here, add a STR block below, and add a column to every word.
+// Supported languages.
+// To add a language: add it here, add a STR block below, and add a word list per category in words.js.
 export const LANGS = [
   { code: 'tr', name: 'Türkçe', short: 'TR', dir: 'ltr', sep: ', ' },
   { code: 'ar', name: 'العربية', short: 'AR', dir: 'rtl', sep: '، ' },
