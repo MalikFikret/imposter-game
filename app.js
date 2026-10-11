@@ -1,8 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getDatabase, ref, onValue, get, set, update, remove, runTransaction, onDisconnect, query, orderByChild, limitToLast, increment } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
-import { CATS } from './words.js?v=1.0.5';
-import { STR, LANGS } from './i18n.js?v=1.0.5';
+import { CATS } from './words.js?v=1.0.6';
+import { STR, LANGS } from './i18n.js?v=1.0.6';
 
 // Public web config. Not a secret: access is enforced by database.rules.json.
 const firebaseConfig = {
@@ -15,7 +15,7 @@ const firebaseConfig = {
   appId: '1:358335009293:web:439ba4c30a8efa69787b44'
 };
 
-const APP_VERSION = '1.0.5';
+const APP_VERSION = '1.0.6';
 const REPO_URL = 'https://github.com/MalikFikret/imposter-game';
 const guideUrl = () => `guide/${['tr', 'ar', 'en'].includes(S.ui) ? S.ui : 'en'}.html`;
 
@@ -682,6 +682,7 @@ function viewAbout() {
       <a href="https://github.com/MalikFikret" target="_blank" rel="noopener"><span class="c-k">GitHub</span><span class="c-v" dir="ltr">github.com/MalikFikret</span></a>
       <a href="mailto:malikfikretcontact@gmail.com"><span class="c-k">${esc(t('email'))}</span><span class="c-v" dir="ltr">malikfikretcontact@gmail.com</span></a>
       <a href="https://www.instagram.com/malikfikret" target="_blank" rel="noopener"><span class="c-k">Instagram</span><span class="c-v" dir="ltr">@malikfikret</span></a>
+      <a href="https://www.linkedin.com/in/malikfikret" target="_blank" rel="noopener"><span class="c-k">LinkedIn</span><span class="c-v" dir="ltr">linkedin.com/in/malikfikret</span></a>
     </div></section>
   <section class="stack"><h2 class="h2">${esc(t('privacyTitle'))}</h2><p class="muted">${esc(t('privacyText'))}</p></section>
   <section class="panel stack rights"><b>${esc(t('rightsLine'))}</b><p class="muted">${esc(t('rightsText'))}</p></section>`;

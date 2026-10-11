@@ -153,6 +153,7 @@ No code changes are required.
 - GitHub: [github.com/MalikFikret](https://github.com/MalikFikret)
 - Email: [malikfikretcontact@gmail.com](mailto:malikfikretcontact@gmail.com)
 - Instagram: [@malikfikret](https://www.instagram.com/malikfikret)
+- LinkedIn: [linkedin.com/in/malikfikret](https://www.linkedin.com/in/malikfikret)
 
 ## License
 
