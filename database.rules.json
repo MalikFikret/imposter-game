@@ -1,7 +1,7 @@
 {
   "rules": {
-    ".read": "auth != null && auth.uid === '__ADMIN_UID__'",
-    ".write": "auth != null && auth.uid === '__ADMIN_UID__'",
+    ".read": "auth != null && auth.uid === 'mLDWMPbr0ia7CdlTRNl5Et24Khl2'",
+    ".write": "auth != null && auth.uid === 'mLDWMPbr0ia7CdlTRNl5Et24Khl2'",
     "rooms": {
       "$code": {
         ".read": "auth != null",
