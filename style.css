@@ -210,4 +210,20 @@ main.stack-lg { gap: 20px; }
 .tbl .num { text-align: end; font-variant-numeric: tabular-nums; font-family: var(--font-mono); white-space: nowrap; }
 .tbl tr.lead td:first-child { font-weight: 800; }
 .sub-cell { display: block; color: var(--muted); font-size: .8rem; }
+/* Language picker */
+.lang-menu { position: relative; }
+.lang-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 4px 10px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--surface); font-family: var(--font-mono); font-weight: 700; font-size: .8rem; letter-spacing: .06em; }
+.lang-btn span { font-size: .7rem; opacity: .6; }
+.lang-pop { position: absolute; inset-inline-end: 0; top: calc(100% + 6px); z-index: 20; min-width: 170px; display: flex; flex-direction: column; padding: 6px; border-radius: 10px; background: var(--surface); border: 2px solid var(--fg); box-shadow: 0 10px 28px rgba(0,0,0,.18); }
+.lang-pop button { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 42px; padding: 6px 10px; border-radius: 7px; font-weight: 600; text-align: start; }
+.lang-pop button .mono { font-size: .72rem; color: var(--muted); }
+.lang-pop button[aria-checked="true"] { background: var(--fg); color: var(--on-fg); }
+.lang-pop button[aria-checked="true"] .mono { color: inherit; opacity: .7; }
+/* Word language options in room rules */
+.lang-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
+.lang-opts button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; min-height: 64px; border-radius: 10px; border: 2px solid var(--line); background: var(--surface); text-align: start; }
+.lo-name { font-weight: 800; font-size: 1.05rem; }
+.lo-ex { font-size: .8rem; color: var(--muted); }
+.lang-opts button[aria-pressed="true"] { border-color: var(--fg); background: var(--fg); color: var(--on-fg); }
+.lang-opts button[aria-pressed="true"] .lo-ex { color: inherit; opacity: .7; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

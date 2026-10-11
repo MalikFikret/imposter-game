@@ -2,7 +2,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getDatabase, ref, onValue, get, set, update, remove, runTransaction, onDisconnect, query, orderByChild, limitToLast } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { CATS } from './words.js';
-import { STR } from './i18n.js';
+import { STR, LANGS } from './i18n.js';
 
 // Public web config. Not a secret: access is enforced by database.rules.json.
 const firebaseConfig = {
@@ -37,11 +37,24 @@ const db = getDatabase(fb);
 const BANK = {};
 for (const [key, c] of Object.entries(CATS)) {
   BANK[key] = {
-    tr: c.tr, ar: c.ar,
+    names: Object.fromEntries(LANGS.map(l => [l.code, c[l.code] || c.tr])),
     list: c.words.split(';').map(s => s.trim()).filter(Boolean).map(s => s.split('|').map(x => x.trim()))
   };
 }
 const CAT_KEYS = Object.keys(BANK);
+// ---------- languages ----------
+const LANG = Object.fromEntries(LANGS.map((l, i) => [l.code, { ...l, idx: i }]));
+const normLang = c => (LANG[c] ? c : 'tr');
+const isRTL = c => LANG[normLang(c)].dir === 'rtl';
+const langName = c => LANG[normLang(c)].name;
+const catName = (c, lang) => (BANK[c] ? BANK[c].names[normLang(lang)] : c);
+const wordOf = (c, i, lang) => { const w = BANK[c] && BANK[c].list[i]; return w ? (w[LANG[normLang(lang)].idx] || w[0]) : '?'; };
+function detectLang() {
+  const saved = ls.get('ui');
+  if (LANG[saved]) return saved;
+  const nav = (navigator.language || 'tr').slice(0, 2).toLowerCase();
+  return LANG[nav] ? nav : 'tr';
+}
 
 // ---------- helpers ----------
 const $app = document.getElementById('app');
@@ -67,13 +80,13 @@ const now = () => Date.now() + offset;
 
 const fmt = (s, vars) => String(s).replace(/\{(\w+)\}/g, (_, k) => (vars && k in vars ? vars[k] : ''));
 const t = (k, vars) => fmt((STR[S.ui] && STR[S.ui][k]) ?? STR.tr[k] ?? k, vars);
-const sep = () => (S.ui === 'ar' ? '، ' : ', ');
+const sep = () => LANG[S.ui].sep;
 const tl = (lang, k, vars) => fmt((STR[lang] && STR[lang][k]) ?? STR.tr[k] ?? k, vars);
-const backArrow = () => (S.ui === 'ar' ? '→' : '←');
+const backArrow = () => (isRTL(S.ui) ? '→' : '←');
 
 // ---------- state ----------
 const S = {
-  uid: null, booted: false, ui: ls.get('ui') === 'ar' ? 'ar' : 'tr',
+  uid: null, booted: false, ui: 'tr', langOpen: false,
   view: 'home', code: null, room: null, unsub: null, tab: 'game',
   draft: null, editing: false, pick: null, cardOpen: false,
   local: { round: -1, idx: 0, shown: false }, lastKey: null,
@@ -82,6 +95,8 @@ const S = {
   pub: [], pubUnsub: null, lastPublic: null,
   nameEdit: false, pending: false, attempted: {}, presence: null, connected: false, busy: false
 };
+
+S.ui = detectLang();
 
 // ---------- auth & boot ----------
 onValue(ref(db, '.info/serverTimeOffset'), s => { offset = s.val() || 0; });
@@ -339,8 +354,8 @@ async function startRound() {
     cats.forEach(c => { BANK[c].list.forEach((w, i) => avail.push([c, i])); updates['used/' + c] = null; });
   }
   const [cat, wi] = pickOne(avail);
-  const lang = st.lang === 'ar' ? 'ar' : 'tr';
-  const word = BANK[cat].list[wi][lang === 'ar' ? 1 : 0];
+  const lang = normLang(st.lang);
+  const word = wordOf(cat, wi, lang);
   const imps = shuffle(roster).slice(0, k);
   const crew = roster.filter(p => !imps.includes(p));
   // First speaker: an imposter only ~5% of the time (per imposter), and not the same person as last round
@@ -531,7 +546,7 @@ async function shareLink() {
 // ---------- views ----------
 function render() {
   document.documentElement.lang = S.ui;
-  document.documentElement.dir = S.ui === 'ar' ? 'rtl' : 'ltr';
+  document.documentElement.dir = isRTL(S.ui) ? 'rtl' : 'ltr';
   document.title = S.code ? `${S.code} · ${t('appName')}` : t('appName');
   let h;
   if (!S.uid) h = header() + `<p class="panel muted">${S.error || t('connecting')}</p>`;
@@ -542,7 +557,11 @@ function render() {
   $app.innerHTML = h;
 }
 
-const langBtn = () => `<button class="chip-btn" data-act="lang" lang="${S.ui === 'ar' ? 'tr' : 'ar'}">${S.ui === 'ar' ? 'Türkçe' : 'العربية'}</button>`;
+// Compact language picker: shows the current language code, opens a small menu
+const langBtn = () => `<div class="lang-menu">
+  <button class="lang-btn" data-act="langMenu" aria-expanded="${S.langOpen}" aria-label="Language">${esc(LANG[S.ui].short)}<span aria-hidden="true">▾</span></button>
+  ${S.langOpen ? `<div class="lang-pop" role="menu">${LANGS.map(l => `<button role="menuitemradio" aria-checked="${l.code === S.ui}" data-act="setLang" data-v="${l.code}"><span lang="${l.code}">${esc(l.name)}</span><span class="mono">${l.short}</span></button>`).join('')}</div>` : ''}
+</div>`;
 function header() {
   return `<header class="top"><button class="brand" data-act="home">${esc(t('appName'))}</button>${langBtn()}</header>`;
 }
@@ -575,14 +594,14 @@ function viewHome() {
     <span class="label">${esc(t('publicRooms'))}</span>
     <div class="list">${S.pub.map(x => `<button class="row-btn pub" data-act="open" data-code="${esc(x.code)}">
       <span class="pub-main"><b>${esc(x.hostName || '?')}</b><span class="muted mono" dir="ltr">${esc(x.code)}</span></span>
-      <span class="pub-meta"><span class="badge">${esc(t(x.lang === 'ar' ? 'langAr' : 'langTr'))}</span><span class="badge">${esc(t('playersN', { n: x.players || 0 }))}</span><span class="badge ${x.phase === 'playing' ? 'b-live' : ''}">${esc(x.phase === 'playing' ? t('phasePlaying') : t('phaseLobby'))}</span></span>
+      <span class="pub-meta"><span class="badge">${esc(langName(x.lang))}</span><span class="badge">${esc(t('playersN', { n: x.players || 0 }))}</span><span class="badge ${x.phase === 'playing' ? 'b-live' : ''}">${esc(x.phase === 'playing' ? t('phasePlaying') : t('phaseLobby'))}</span></span>
     </button>`).join('')}</div>
   </section>` : ''}
   ${recent.length ? `<section class="stack">
     <span class="label">${esc(t('recent'))}</span>
     <div class="list">${recent.map(x => `<button class="row-btn" data-act="open" data-code="${esc(x.code)}"><span class="mono" dir="ltr">${esc(x.code)}</span><span class="muted">${esc(x.mode === 'local' ? t('local') : t('online'))}</span></button>`).join('')}</div>
   </section>` : ''}
-  <p class="foot">${esc(t('footer'))}</p>`;
+`;
 }
 
 function rulesForm(d) {
@@ -597,12 +616,12 @@ function rulesForm(d) {
   if (d.mode === 'online') {
     h += `<button class="toggle" data-act="dpublic" aria-pressed="${!!d.public}"><span class="toggle-txt"><b>${esc(t('publicRoom'))}</b><span class="sub">${esc(t('publicRoomSub'))}</span></span><span class="sw" aria-hidden="true"></span></button>`;
   }
-  h += `<div class="stack"><span class="label">${esc(t('wordLang'))}</span><div class="seg">${['tr', 'ar'].map(l =>
-    `<button data-act="dlang" data-v="${l}" aria-pressed="${d.lang === l}">${esc(t(l === 'tr' ? 'langTr' : 'langAr'))}</button>`).join('')}</div></div>`;
+  h += `<div class="stack"><span class="label">${esc(t('wordLang'))}</span><div class="lang-opts">${LANGS.map(l =>
+    `<button data-act="dlang" data-v="${l.code}" aria-pressed="${normLang(d.lang) === l.code}"><span class="lo-name" lang="${l.code}">${esc(l.name)}</span><span class="lo-ex" lang="${l.code}">${esc(wordOf('animals', 0, l.code))} · ${esc(wordOf('food', 64, l.code))}</span></button>`).join('')}</div></div>`;
   const all = d.cats.length === CAT_KEYS.length;
   h += `<div class="stack"><span class="label">${esc(t('cats'))}</span><div class="chips">
     <button class="chip" data-act="dall" aria-pressed="${all}">${esc(t('all'))}</button>
-    ${CAT_KEYS.map(c => `<button class="chip" data-act="dcat" data-c="${c}" aria-pressed="${d.cats.includes(c)}">${esc(BANK[c][S.ui])} <span class="cnt">${BANK[c].list.length}</span></button>`).join('')}
+    ${CAT_KEYS.map(c => `<button class="chip" data-act="dcat" data-c="${c}" aria-pressed="${d.cats.includes(c)}">${esc(catName(c, S.ui))} <span class="cnt">${BANK[c].list.length}</span></button>`).join('')}
   </div></div>`;
   h += `<button class="toggle" data-act="dhint" aria-pressed="${d.hint}"><span class="toggle-txt"><b>${esc(t('hint'))}</b><span class="sub">${esc(t('hintSub'))}</span></span><span class="sw" aria-hidden="true"></span></button>`;
   h += `<div class="stack"><span class="label">${esc(t('imps'))}</span><div class="seg">${[1, 2].map(n =>
@@ -775,7 +794,7 @@ function viewScores(r, host) {
     <div class="table-wrap"><table class="tbl">
       <thead><tr><th class="num">${esc(t('colRound'))}</th><th>${esc(t('colWord'))}</th><th>${esc(t('colImposter'))}</th><th>${esc(t('colWinner'))}</th></tr></thead>
       <tbody>${hist.map(x => `<tr><td class="num">${x.round}</td>
-        <td><b lang="${x.lang === 'ar' ? 'ar' : 'tr'}">${esc(x.word)}</b><span class="sub-cell">${esc((BANK[x.cat] && BANK[x.cat][S.ui]) || '')}</span></td>
+        <td><b lang="${normLang(x.lang)}">${esc(x.word)}</b><span class="sub-cell">${esc(catName(x.cat, S.ui))}</span></td>
         <td>${esc(arr(x.imps).map(p => nameOf(p)).join(sep()))}</td>
         <td><span class="pill ${x.impWins ? 'p-imp' : 'p-crew'}">${esc(x.impWins ? t('impWinShort') : t('crewWinShort'))}</span></td></tr>`).join('')}</tbody>
     </table></div></section>
@@ -815,7 +834,7 @@ function rulesSummary(r) {
   const st = r.settings || {};
   const n = arr(st.cats).length || CAT_KEYS.length;
   return `<div class="badges">
-    <span class="badge">${esc(t(st.lang === 'ar' ? 'langAr' : 'langTr'))}</span>
+    <span class="badge">${esc(langName(st.lang))}</span>
     <span class="badge">${esc(t('catsN', { n }))}</span>
     <span class="badge">${esc(t('impsN', { n: st.imps === 2 ? 2 : 1 }))}</span>
     <span class="badge">${esc(t(st.hint === false ? 'hintOff' : 'hintOn'))}</span>
@@ -840,9 +859,9 @@ function vLobby(r, g, host) {
 }
 
 function cardBlock(g, isImp, open) {
-  const L = g.lang === 'ar' ? 'ar' : 'tr';
-  const attrs = `dir="${L === 'ar' ? 'rtl' : 'ltr'}" lang="${L}"`;
-  const catName = (isImp && g.hint === false) ? '???' : ((BANK[g.cat] && BANK[g.cat][L]) || g.cat);
+  const L = normLang(g.lang);
+  const attrs = `dir="${isRTL(L) ? 'rtl' : 'ltr'}" lang="${L}"`;
+  const cName = (isImp && g.hint === false) ? '???' : catName(g.cat, L);
   if (!open) {
     return `<div class="card" ${attrs}>
       <div class="card-cat"><span class="label">${esc(tl(L, 'category'))}</span><span class="cat-name">• • •</span></div>
@@ -851,7 +870,7 @@ function cardBlock(g, isImp, open) {
   }
   const w = isImp ? tl(L, 'impWord') : g.word;
   return `<div class="card open" ${attrs}>
-    <div class="card-cat"><span class="label">${esc(tl(L, 'category'))}</span><span class="cat-name">${esc(catName)}</span></div>
+    <div class="card-cat"><span class="label">${esc(tl(L, 'category'))}</span><span class="cat-name">${esc(cName)}</span></div>
     <div class="word ${sizeClass(w)}">${esc(w)}</div>
     <p class="card-note">${esc(tl(L, isImp ? 'impNote' : 'crewNote'))}</p></div>`;
 }
@@ -935,13 +954,13 @@ function vResult(r, g, host) {
   if (g.impLeft) msg = esc(t('resImpLeft', { name: nameOf(g.impLeft) }));
   else if (!caught || !imps.includes(caught)) msg = t('resWrong', { name: esc(nameOf(caught)) });
   else msg = esc(impWin ? t('resGuessed') : t('resFailed'));
-  const L = g.lang === 'ar' ? 'ar' : 'tr';
+  const L = normLang(g.lang);
   let h = `<section class="verdict ${impWin ? 'imp' : 'crew'} stack">
       <span class="label">${esc(t('resultLabel'))}</span>
       <h2 class="h2">${esc(impWin ? t('impWin') : t('crewWin'))}</h2>
       <p>${msg}</p><p class="pts">${esc(impWin ? t('ptsImp') : t('ptsCrew'))}</p></section>
     <section class="facts">
-      <div><span class="label">${esc(t('theWord'))}</span><b class="fact" lang="${L}">${esc(g.word)}</b><span class="muted">${esc((BANK[g.cat] && BANK[g.cat][L]) || '')}</span></div>
+      <div><span class="label">${esc(t('theWord'))}</span><b class="fact" lang="${L}">${esc(g.word)}</b><span class="muted">${esc(catName(g.cat, S.ui))}</span></div>
       <div><span class="label">${esc(imps.length > 1 ? t('impsWere') : t('impWas'))}</span><b class="fact">${imps.map(p => esc(nameOf(p))).join(sep())}</b></div>
     </section>`;
   if (isOnline()) {
@@ -949,7 +968,7 @@ function vResult(r, g, host) {
     h += `<details class="hist"><summary>${esc(t('votesTitle'))}</summary><ul class="plist small">${activeRoster(g).map(p => {
       const v = votes[p];
       const target = v && v.key === key ? esc(nameOf(v.target)) : `<span class="muted">${esc(t('noVote'))}</span>`;
-      return `<li><span>${esc(nameOf(p))}</span><span class="arrow">${S.ui === 'ar' ? '←' : '→'} ${target}</span></li>`;
+      return `<li><span>${esc(nameOf(p))}</span><span class="arrow">${isRTL(S.ui) ? '←' : '→'} ${target}</span></li>`;
     }).join('')}</ul></details>`;
   }
   if (host) h += `<button class="btn" data-act="start">${esc(t('newRound'))}</button><button class="btn ghost" data-act="edit">${esc(t('editRules'))}</button>`;
@@ -994,7 +1013,8 @@ function vLocalJudge(r, g) {
 // ---------- events ----------
 $app.addEventListener('click', e => {
   const b = e.target.closest('[data-act]');
-  if (!b || b.disabled) return;
+  if (!b) { if (S.langOpen && !e.target.closest('.lang-menu')) { S.langOpen = false; render(); } return; }
+  if (b.disabled) return;
   act(b.dataset.act, b.dataset);
 });
 $app.addEventListener('input', e => {
@@ -1020,10 +1040,12 @@ async function act(a, ds) {
   const armKey = ['kick', 'transfer'].includes(a) ? `${a}:${ds.p}` : a;
   if (['reset', 'cancelRound', 'leave', 'kick', 'transfer'].includes(a) && S.armed !== armKey) { S.armed = armKey; render(); return; }
   const wasArmed = S.armed; S.armed = null;
+  if (a !== 'langMenu' && a !== 'setLang') S.langOpen = false;
   const d = S.draft;
   switch (a) {
     case 'home': if (S.view === 'room') leaveRoom(); else { S.view = 'home'; render(); } break;
-    case 'lang': S.ui = S.ui === 'ar' ? 'tr' : 'ar'; ls.set('ui', S.ui); render(); break;
+    case 'langMenu': S.langOpen = !S.langOpen; render(); break;
+    case 'setLang': S.ui = normLang(ds.v); S.langOpen = false; ls.set('ui', S.ui); render(); break;
     case 'tab': S.tab = ds.v; S.editing = false; render(); break;
     case 'newOnline': case 'newLocal':
       S.draft = newDraft(a === 'newLocal' ? 'local' : 'online'); S.view = 'create'; render(); break;

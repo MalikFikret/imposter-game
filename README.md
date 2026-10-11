@@ -23,10 +23,15 @@ Arkadaşlarla oynanan kelime ve blöf oyunu. Herkes gizli kelimeyi bilir, sahtek
 |---|---|
 | `index.html` | Sayfa ve stiller |
 | `app.js` | Oyun mantığı ve Firebase bağlantısı |
-| `words.js` | Kelime bankası (Türkçe / Arapça). **Sadece sona ekleme yapılır**, sıra değişmez. |
-| `i18n.js` | Arayüz metinleri (TR / AR) |
+| `words.js` | Kelime bankası, her kelime `Türkçe|Arapça|İngilizce`. **Sadece sona ekleme yapılır**, sıra değişmez. |
+| `i18n.js` | Dil listesi (`LANGS`) ve arayüz metinleri (TR / AR / EN) |
 | `admin.html`, `admin.js` | Yönetim paneli (Google girişi, sadece kurallarda tanımlı admin hesabı) |
 | `style.css` | Ortak stiller |
 | `database.rules.json` | Firebase Realtime Database güvenlik kuralları (Firebase konsoluna yapıştırılır) |
 
 Altyapı: GitHub Pages (statik sayfa) + Firebase Realtime Database + Firebase anonim giriş.
+
+## Yeni dil eklemek
+1. `i18n.js` içinde `LANGS` listesine dili ekle (kod, ad, yön).
+2. Aynı dosyada `STR` içine o dilin metin bloğunu ekle.
+3. `words.js` içinde her kategoriye o dilde ad ekle ve her kelimeye sona bir `|çeviri` sütunu ekle.

@@ -2,6 +2,8 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getDatabase, ref, onValue, set, update, remove } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { CATS } from './words.js';
+import { LANGS } from './i18n.js';
+const langName = c => (LANGS.find(l => l.code === c) || LANGS[0]).name;
 
 // Same project as the game, but a separately named app instance so the admin's Google
 // session never replaces the anonymous identity the game uses on this device.
@@ -127,7 +129,7 @@ function viewRoom(code, r) {
       <dt>Kuruldu</dt><dd>${r.meta && r.meta.createdAt ? new Date(r.meta.createdAt).toLocaleString('tr-TR') : '—'}</dd>
       <dt>Son hareket</dt><dd>${ago(lastActive(r))}</dd>
       <dt>Durum</dt><dd>${esc(g.phase || 'lobby')}${g.round ? ` · tur ${g.round}` : ''}${g.word ? ` · kelime: <b>${esc(g.word)}</b>` : ''}</dd>
-      <dt>Kurallar</dt><dd>${st.lang === 'ar' ? 'Arapça' : 'Türkçe'} · ${arr(st.cats).map(c => CATS[c] ? CATS[c].tr : c).join(', ') || 'tüm kategoriler'} · ${st.imps === 2 ? 2 : 1} sahtekâr · ipucu ${st.hint === false ? 'kapalı' : 'açık'}</dd>
+      <dt>Kurallar</dt><dd>${esc(langName(st.lang))} · ${arr(st.cats).map(c => CATS[c] ? CATS[c].tr : c).join(', ') || 'tüm kategoriler'} · ${st.imps === 2 ? 2 : 1} sahtekâr · ipucu ${st.hint === false ? 'kapalı' : 'açık'}</dd>
     </dl>
 
     <section class="stack"><span class="label">Oyuncular · ${ps.length}</span>
