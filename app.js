@@ -572,7 +572,7 @@ const langBtn = () => `<div class="lang-menu">
   ${S.langOpen ? `<div class="lang-pop" role="menu">${LANGS.map(l => `<button role="menuitemradio" aria-checked="${l.code === S.ui}" data-act="setLang" data-v="${l.code}"><span lang="${l.code}">${esc(l.name)}</span><span class="mono">${l.short}</span></button>`).join('')}</div>` : ''}
 </div>`;
 function header() {
-  return `<header class="top"><button class="brand" data-act="home">${esc(t('appName'))}</button>${langBtn()}</header>`;
+  return `<header class="top"><button class="brand" data-act="home" aria-label="${esc(t('appName'))}">${logo(t('appName'))}</button>${langBtn()}</header>`;
 }
 
 function pinInput(id, field, n, label, help) {
@@ -585,7 +585,7 @@ function viewHome() {
   const recent = ls.get('recent') || [];
   return `
   <section class="hero">
-    <h1 class="display"><span class="strike">${esc(t('appName'))}</span></h1>
+    <h1 class="display" aria-label="${esc(t('appName'))}">${logo(t('appName'))}</h1>
     <p class="lede">${esc(t('tagline'))}</p>
   </section>
   <div class="choices">
@@ -616,10 +616,31 @@ function viewHome() {
   </footer>`;
 }
 
+// Logo: one random letter of the name is "the imposter" (picked once per page load).
+// Arabic letters connect to each other, so there the letter only changes colour and
+// zero-width joiners keep the connected shapes intact around the coloured span.
+const AR_NO_LEFT_JOIN = new Set([...'اأإآدذرزوؤةىء']);
+const isArabicLetter = ch => /[\u0621-\u064A]/.test(ch);
+const logoPick = {};
+function logo(text) {
+  const chars = Array.from(text);
+  const idxs = chars.map((c, i) => (/\s/.test(c) ? -1 : i)).filter(i => i >= 0);
+  if (!idxs.length) return esc(text);
+  if (logoPick[text] == null) logoPick[text] = idxs[rnd(idxs.length)];
+  const i = logoPick[text], ch = chars[i];
+  const before = chars.slice(0, i).join(''), after = chars.slice(i + 1).join('');
+  if (!isArabicLetter(ch)) return `${esc(before)}<span class="imp-letter">${esc(ch)}</span>${esc(after)}`;
+  const prev = chars[i - 1], next = chars[i + 1];
+  const joinPrev = prev && isArabicLetter(prev) && !AR_NO_LEFT_JOIN.has(prev) && ch !== 'ء';
+  const joinNext = next && isArabicLetter(next) && next !== 'ء' && !AR_NO_LEFT_JOIN.has(ch);
+  const Z = '\u200D';
+  return `${esc(before)}${joinPrev ? Z : ''}<span class="imp-letter ar">${joinPrev ? Z : ''}${esc(ch)}${joinNext ? Z : ''}</span>${joinNext ? Z : ''}${esc(after)}`;
+}
+
 function viewAbout() {
   return `<div class="row"><button class="btn ghost small" data-act="home">${backArrow()} ${esc(t('back'))}</button></div>
   <section class="hero">
-    <h1 class="title">${esc(t('appName'))}</h1>
+    <h1 class="title" aria-label="${esc(t('appName'))}">${logo(t('appName'))}</h1>
     <p class="lede">${esc(t('aboutLead'))}</p>
   </section>
   <dl class="kv about-kv">
