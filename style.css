@@ -211,14 +211,25 @@ main.stack-lg { gap: 20px; }
 .tbl tr:last-child td { border-bottom: 0; }
 .tbl .num { text-align: end; font-variant-numeric: tabular-nums; font-family: var(--font-mono); white-space: nowrap; }
 .tbl tr.lead td:first-child { font-weight: 800; }
-/* Score table: points are the main number */
-.score-tbl td { vertical-align: middle; font-size: 1rem; }
-.score-tbl th.pts-col { color: var(--fg); font-size: .78rem; }
-.score-tbl td.minor { color: var(--muted); font-size: .85rem; }
-.pts-big { display: inline-block; min-width: 2.4em; padding: 4px 10px; border-radius: 10px; background: var(--fg); color: var(--on-fg);
-  font-family: var(--font-display); font-size: 1.6rem; line-height: 1.1; text-align: center; }
-.score-tbl tr.lead .pts-big { background: var(--crew); color: var(--on-fg); }
-.score-tbl tr.lead td:first-child::after { content: ' ★'; color: var(--crew); }
+/* Score board */
+.board td { vertical-align: middle; padding: 12px 8px; }
+.board th.rk, .board td.rk { width: 1%; padding-inline: 10px 2px; text-align: center; }
+.board .rank { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; font-family: var(--font-mono); font-weight: 700; font-size: .85rem; color: var(--muted); border: 1.5px solid var(--line); }
+.board tr.lead .rank { background: var(--fg); color: var(--on-fg); border-color: var(--fg); }
+.board .who { width: 100%; }
+.board .nm { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.board tr.lead .nm { font-weight: 800; }
+.board .bar { display: block; height: 4px; margin-top: 7px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.board .bar i { display: block; height: 100%; background: var(--muted); border-radius: 2px; }
+.board tr.lead .bar i { background: var(--crew); }
+.board .minor { color: var(--muted); font-size: .82rem; }
+.board .minor { padding-inline: 5px; }
+.board th.minor { font-size: .6rem; letter-spacing: 0; }
+.board th.pts { color: var(--fg); padding-inline: 6px 14px; letter-spacing: 0; }
+.board td.pts { padding-inline: 6px 14px; }
+.board td.pts b { font-family: var(--font-display); font-weight: 400; font-size: 1.75rem; line-height: 1; color: var(--fg); }
+:root[dir="rtl"] .board td.pts b { font-weight: 800; }
+.board tr.lead td { background: color-mix(in srgb, var(--crew) 7%, transparent); }
 .sub-cell { display: block; color: var(--muted); font-size: .8rem; }
 /* Language picker */
 .lang-menu { position: relative; }
