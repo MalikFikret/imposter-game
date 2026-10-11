@@ -9,6 +9,10 @@ export const LANGS = [
 
 export const STR = {
   tr: {
+    step1of2: "Adım 1/2",
+    step2of2: "Adım 2/2",
+    hostJoinTitle: "Şimdi oyuncu olarak katıl",
+    hostJoinText: "Oda hazır. Sen de diğer oyuncular gibi adını ve 4 rakamlı kişisel PIN'ini gir.",
     roomNameLabel: "Oda adı (isteğe bağlı)",
     roomNamePh: "Örn. Cuma akşamı",
     roomNameHelp: "Herkes odayı bu adla görür. En fazla 30 karakter.",
@@ -215,6 +219,10 @@ export const STR = {
     crewNote: 'Kelimeyi doğrudan söyleme, sadece ipucu ver.'
   },
   ar: {
+    step1of2: "الخطوة 1 من 2",
+    step2of2: "الخطوة 2 من 2",
+    hostJoinTitle: "انضم الآن كلاعب",
+    hostJoinText: "الغرفة جاهزة. اكتب اسمك ورمزك الشخصي من 4 أرقام مثل بقية اللاعبين.",
     roomNameLabel: "اسم الغرفة (اختياري)",
     roomNamePh: "مثلًا: سهرة الجمعة",
     roomNameHelp: "يرى الجميع الغرفة بهذا الاسم. 30 حرفًا كحد أقصى.",
@@ -420,6 +428,10 @@ export const STR = {
     crewNote: 'لا تقل الكلمة مباشرة، أعطِ تلميحًا فقط.'
   },
   en: {
+    step1of2: "Step 1 of 2",
+    step2of2: "Step 2 of 2",
+    hostJoinTitle: "Now join as a player",
+    hostJoinText: "The room is ready. Like everyone else, enter your name and a 4-digit personal PIN.",
     roomNameLabel: "Room name (optional)",
     roomNamePh: "e.g. Friday night",
     roomNameHelp: "Everyone sees the room under this name. Up to 30 characters.",

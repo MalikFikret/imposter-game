@@ -1,8 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getDatabase, ref, onValue, get, set, update, remove, runTransaction, onDisconnect, query, orderByChild, limitToLast } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
-import { CATS } from './words.js?v=1.0.2';
-import { STR, LANGS } from './i18n.js?v=1.0.2';
+import { CATS } from './words.js?v=1.0.3';
+import { STR, LANGS } from './i18n.js?v=1.0.3';
 
 // Public web config. Not a secret: access is enforced by database.rules.json.
 const firebaseConfig = {
@@ -15,7 +15,7 @@ const firebaseConfig = {
   appId: '1:358335009293:web:439ba4c30a8efa69787b44'
 };
 
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.0.3';
 const REPO_URL = 'https://github.com/MalikFikret/imposter-game';
 const guideUrl = () => `guide/${['tr', 'ar', 'en'].includes(S.ui) ? S.ui : 'en'}.html`;
 
@@ -209,7 +209,7 @@ function stopPublicList() { if (S.pubUnsub) { S.pubUnsub(); S.pubUnsub = null; }
 // The host's device keeps the public listing entry current
 function syncPublic() {
   const r = S.room;
-  if (!r || !isHost() || !isOnline() || !(r.settings && r.settings.public)) return;
+  if (!r || !isHost() || !isOnline() || !(r.settings && r.settings.public) || !r.meta.hostSlot) return;
   const ps = playersOf(r);
   const g = r.game || {};
   const hostP = r.meta.hostSlot && r.players && r.players[r.meta.hostSlot];
@@ -423,9 +423,6 @@ async function guarded(fn) {
 
 function createRoom() {
   const d = S.draft;
-  const name = (d.name || '').trim().slice(0, 20);
-  if (d.mode === 'online' && !name) return flash(t('needName'));
-  if (d.mode === 'online' && !isPin(d.pin, 4)) return flash(t('badMyPin'));
   if (!isPin(d.hostPin, 6)) return flash(t('badHostPin'));
   return guarded(async () => {
     let code = genCode();
@@ -434,20 +431,16 @@ function createRoom() {
       code = genCode();
     }
     const room = { settings: settingsOf(d), game: { phase: 'lobby', round: 0 } };
-    let slot = null;
     if (d.mode === 'online') {
-      slot = genSlot();
-      room.meta = { host: S.uid, hostSlot: slot, mode: 'online', pinSet: true, createdAt: now() };
-      room.players = { [slot]: { name, uid: S.uid, joinedAt: now(), status: 'in', online: true } };
-      room.members = { [S.uid]: slot };
-      S.form.name = name; ls.set('name', name);
+      // Step 1 only creates the room; the host then joins as a player on the normal join screen (step 2)
+      room.meta = { host: S.uid, mode: 'online', pinSet: true, createdAt: now() };
     } else {
       room.meta = { host: S.uid, mode: 'local', pinSet: true, createdAt: now() };
       room.players = localPlayersMap(d);
     }
     await set(ref(db, 'rooms/' + code), room);
     await set(ref(db, `secrets/${code}/hostPin`), d.hostPin);
-    if (slot) await set(ref(db, `secrets/${code}/pins/${slot}`), d.pin);
+    S.form.mode = 'new';
     openRoom(code);
     if (S.code === code) stopPublicList();
   });
@@ -465,6 +458,8 @@ function joinNew() {
     await set(P(`players/${slot}`), { name, uid: S.uid, joinedAt: now(), status: 'in', online: true });
     await set(P(`members/${S.uid}`), slot);
     await set(ref(db, `secrets/${S.code}/pins/${slot}`), f.pin);
+    // The host taking their seat for the first time: remember which seat is the host's
+    if (isHost() && !(S.room.meta && S.room.meta.hostSlot)) await update(P('meta'), { hostSlot: slot });
     S.form.name = name; ls.set('name', name); S.form.pin = '';
   });
 }
@@ -673,10 +668,10 @@ function viewAbout() {
   <section class="panel stack rights"><b>${esc(t('rightsLine'))}</b><p class="muted">${esc(t('rightsText'))}</p></section>`;
 }
 
-function rulesForm(d) {
+function rulesForm(d, afterName = '') {
   let h = `<label class="field"><span class="label">${esc(t('roomNameLabel'))}</span>
     <input id="rname" data-draft="roomName" value="${esc(d.roomName || '')}" maxlength="30" placeholder="${esc(t('roomNamePh'))}" autocomplete="off">
-    <span class="note">${esc(t('roomNameHelp'))}</span></label>`;
+    <span class="note">${esc(t('roomNameHelp'))}</span></label>` + afterName;
   if (d.mode === 'local') {
     h += `<div class="stack"><span class="label">${esc(t('players'))} · ${d.players.length}</span>` +
       d.players.map((p, i) => `<div class="player"><span class="n">${i + 1}</span>
@@ -703,12 +698,10 @@ function rulesForm(d) {
 function viewCreate() {
   const d = S.draft;
   return `<div class="row"><button class="btn ghost small" data-act="home">${backArrow()} ${esc(t('back'))}</button></div>
+  ${d.mode === 'online' ? `<span class="label">${esc(t('step1of2'))}</span>` : ''}
   <h2 class="title">${esc(d.mode === 'local' ? t('createLocal') : t('createOnline'))}</h2>
   <div class="stack-lg">
-    ${d.mode === 'online' ? `<label class="field"><span class="label">${esc(t('yourName'))}</span><input id="cname" data-draft="name" value="${esc(d.name)}" maxlength="20" autocomplete="nickname"></label>
-      ${pinInput('cpin', 'data-draft="pin"', 4, t('myPin'), t('myPinHelp'))}` : ''}
-    ${pinInput('chpin', 'data-draft="hostPin"', 6, t('hostPin'), t('hostPinHelp'))}
-    ${rulesForm(d)}
+    ${rulesForm(d, pinInput('chpin', 'data-draft="hostPin"', 6, t('hostPin'), t('hostPinHelp')))}
     <button class="btn" data-act="create" ${S.busy ? 'disabled' : ''}>${esc(t('create'))}</button>
   </div>`;
 }
@@ -763,6 +756,13 @@ function viewLocalClaim() {
 
 function viewJoin(r, g) {
   const f = S.form, ps = playersOf(r);
+  if (isHost() && !mySlot()) {
+    return `<section class="panel stack attn"><span class="label">${esc(t('step2of2'))}</span><h2 class="h2">${esc(t('hostJoinTitle'))}</h2><p class="muted">${esc(t('hostJoinText'))}</p></section>
+    <section class="stack">
+      <label class="field"><span class="label">${esc(t('yourName'))}</span><input id="jname" data-form="name" data-enter="joinNew" value="${esc(f.name)}" maxlength="20" autocomplete="nickname"></label>
+      ${pinInput('jpin', 'data-form="pin" data-enter="joinNew"', 4, t('myPin'), t('myPinHelp'))}
+      <button class="btn" data-act="joinNew" ${S.busy ? 'disabled' : ''}>${esc(t('joinBtn'))}</button></section>`;
+  }
   let h = `<div class="seg seg3">
     <button data-act="jmode" data-v="new" aria-pressed="${f.mode === 'new'}">${esc(t('newPlayer'))}</button>
     <button data-act="jmode" data-v="back" aria-pressed="${f.mode === 'back'}">${esc(t('returning'))}</button>
