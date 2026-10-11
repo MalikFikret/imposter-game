@@ -61,11 +61,17 @@
         },
         "used": {
           ".write": "auth != null && root.child('rooms').child($code).child('members').child(auth.uid).exists()"
+        },
+        "settings": {
+          "name": {
+            ".validate": "newData.isString() && newData.val().length <= 30"
+          }
         }
       }
     },
     "secrets": {
       "$code": {
+        ".write": "auth != null && !newData.exists() && root.child('rooms').child($code).child('meta/host').val() === auth.uid",
         "hostPin": {
           ".write": "auth != null && root.child('rooms').child($code).child('meta/host').val() === auth.uid",
           ".validate": "newData.isString() && newData.val().matches(/^[0-9]{6}$/)"

@@ -256,4 +256,6 @@ a.btn { text-decoration: none; }
 .guide details p { padding-bottom: 10px; }
 .guide .tbl { border: 2px solid var(--line); border-radius: 10px; background: var(--surface); }
 .guide-foot { color: var(--muted); font-size: .85rem; text-align: center; padding-top: 12px; border-top: 1px solid var(--line); }
+.room-name { font-size: 1.35rem; font-weight: 800; text-align: center; margin: -6px 0 -14px; overflow-wrap: anywhere; line-height: 1.25; }
+.danger-zone { border-color: var(--imp); margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

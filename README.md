@@ -17,9 +17,9 @@ A multilingual party word game for 3–10 players. Everyone gets the same secret
 | Game modes | **Online room**: every player joins from their own phone with a 6-character code or invite link and votes on their own device. **Single-phone room**: one phone is passed around; votes are made out loud and marked on the phone. |
 | Rounds | Random speaking order (the imposter speaks first only ~5% of the time), vote with explicit confirmation, automatic re-vote on ties, 60-second guess timer for a caught imposter, majority "did they guess it?" vote. |
 | Scoring | Crew win: +1 to every crew member still in the round. Imposter win: +2 to each imposter. Per-room history and a score table (points, wins, rounds played, times as imposter). |
-| Rooms | Private (code only) or public (listed on the main menu), editable rules (word language, categories, 1–2 imposters, category hint for the imposter), persistent across days. |
+| Rooms | Optional room name, private (code only) or public (listed on the main menu), editable rules (word language, categories, 1–2 imposters, category hint for the imposter), persistent across days. |
 | Identity | No sign-up. Each device gets a Firebase anonymous identity. Players protect their seat with a 4-digit personal PIN; the host protects the room with a 6-digit room PIN. |
-| Host tools | Kick (visible as "removed by the host"), approve name changes, hand over the host role (new host sets a new PIN), confirm whether to continue without a disconnected player or cancel the round. |
+| Host tools | Rename or delete the room, kick (visible as "removed by the host"), approve name changes, hand over the host role (new host sets a new PIN), confirm whether to continue without a disconnected player or cancel the round. |
 | Presence | Live online/offline dot per player, driven by Firebase `onDisconnect`. |
 | Languages | UI and word lists in Turkish, Arabic (RTL) and English. Each language has its **own** word list per category (not translations). ~1,000 words per language. |
 | Admin | Google sign-in page for the owner: all rooms, live stats, rename/kick players, reset room PIN, toggle public, clear history, delete rooms, purge rooms idle for 30+ days. |
@@ -44,7 +44,7 @@ There is no custom backend. All game logic runs in the clients; integrity is enf
 ```
 rooms/{CODE}                       CODE = 6 chars from A–Z, 2–9 (no 0/O/1/I/L)
   meta      {host: uid, hostSlot, mode: online|local, pinSet, createdAt}
-  settings  {lang, cats[], hint, imps, public}
+  settings  {name, lang, cats[], hint, imps, public}
   players/{slot}  {name, uid, joinedAt, status: in|left|kicked, online, nameReq}
   members/{uid} = slot             which seat a device occupies (used by the rules)
   game      {phase, round, cat, wi, word, lang, hint, roster[], imps[], order[], pass[], out[], vr, caught, guessEnd, impWins, ...}
@@ -52,7 +52,7 @@ rooms/{CODE}                       CODE = 6 chars from A–Z, 2–9 (no 0/O/1/I/
   judges/{slot}  {round, yes}
   history/r{n}   {round, cat, word, lang, roster[], imps[], out[], caught, impWins, names{}, at}
   used/{cat}[_{lang}]/{index} = true      words already played in this room
-publicRooms/{CODE}   {hostName, lang, players, phase, updatedAt}   listing for public rooms
+publicRooms/{CODE}   {name, hostName, lang, players, phase, updatedAt}   listing for public rooms
 secrets/{CODE}       {hostPin, pins/{slot}}    never readable by clients
 claims/{CODE}/{uid}  {slot, pin, hostPin}      write-only proof used to take over a seat/host role
 ```
@@ -75,7 +75,7 @@ Phase changes are done with `runTransaction` guarded on the expected phase/round
 |---|---|
 | `auth != null` everywhere | Requests that do not come through the app (no anonymous session) are rejected. |
 | No read on `rooms/` root | Rooms cannot be listed; you need the code. Public rooms are listed only through `publicRooms/`. |
-| Host-only cascade on `rooms/{code}` | Only the current host can change settings, kick, reset history or delete. |
+| Host-only cascade on `rooms/{code}` | Only the current host can change settings, kick, reset history or delete the room. The host may also delete `secrets/{code}` as a whole (delete only, never read). |
 | Per-seat writes | A device can only write its own seat's `online`, `status` (`in`/`left`), `nameReq`, vote and judge answer. Names change only through host approval. |
 | `secrets/` has no read rule | PINs are never readable. Ownership is proven by writing a guess to `claims/` and letting the rule compare it with the secret. |
 | `history/r{n}` create-only | Results are immutable once written. |

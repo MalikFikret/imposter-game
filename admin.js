@@ -1,8 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getDatabase, ref, onValue, set, update, remove } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
-import { CATS } from './words.js?v=1.0.1';
-import { LANGS } from './i18n.js?v=1.0.1';
+import { CATS } from './words.js?v=1.0.2';
+import { LANGS } from './i18n.js?v=1.0.2';
 const langName = c => (LANGS.find(l => l.code === c) || LANGS[0]).name;
 
 // Same project as the game, but a separately named app instance so the admin's Google
@@ -75,6 +75,7 @@ function scores(r) {
   }
   return sc;
 }
+const roomName = r => ((r.settings && r.settings.name) || '').trim();
 const hostName = r => { const p = r.meta && r.meta.hostSlot && r.players && r.players[r.meta.hostSlot]; return p ? p.name : (r.meta && r.meta.mode === 'local' ? 'Tek telefon' : '?'); };
 const nameOf = (r, id) => (r.players && r.players[id] && r.players[id].name) || Object.values(r.history || {}).map(h => h && h.names && h.names[id]).find(Boolean) || '?';
 
@@ -94,7 +95,7 @@ function render() {
 function viewList() {
   const all = Object.entries(S.rooms).map(([code, r]) => ({ code, r, last: lastActive(r) })).sort((a, b) => b.last - a.last);
   const f = S.filter.trim().toLocaleLowerCase();
-  const list = f ? all.filter(x => x.code.toLowerCase().includes(f) || hostName(x.r).toLocaleLowerCase().includes(f) || playersOf(x.r).some(p => (p.name || '').toLocaleLowerCase().includes(f))) : all;
+  const list = f ? all.filter(x => x.code.toLowerCase().includes(f) || roomName(x.r).toLocaleLowerCase().includes(f) || hostName(x.r).toLocaleLowerCase().includes(f) || playersOf(x.r).some(p => (p.name || '').toLocaleLowerCase().includes(f))) : all;
   const online = all.reduce((n, x) => n + playersOf(x.r).filter(p => x.r.meta && x.r.meta.mode === 'online' && here(x.r, p)).length, 0);
   const old = all.filter(x => Date.now() - x.last > 30 * DAY);
   return `<section class="stats">
@@ -108,9 +109,9 @@ function viewList() {
       const ps = playersOf(r), live = ps.filter(p => here(r, p)).length;
       return `<button class="room-row" data-act="sel" data-c="${esc(code)}">
         <span class="code" dir="ltr">${esc(code)}</span>
-        <b>${esc(hostName(r))}</b>
+        <b>${esc(roomName(r) || hostName(r))}</b>
         <span class="badge">${r.meta && r.meta.mode === 'local' ? 'Tek telefon' : (r.settings && r.settings.public ? 'Açık' : 'Özel')}</span>
-        <span class="meta">${r.meta && r.meta.mode === 'online' ? `${live}/${ps.length} odada` : `${ps.length} oyuncu`} · ${Object.keys(r.history || {}).length} tur · ${ago(last)}</span>
+        <span class="meta">${roomName(r) ? esc(hostName(r)) + ' · ' : ''}${r.meta && r.meta.mode === 'online' ? `${live}/${ps.length} odada` : `${ps.length} oyuncu`} · ${Object.keys(r.history || {}).length} tur · ${ago(last)}</span>
       </button>`;
     }).join('') || '<p class="muted">Oda yok.</p>'}</div>
     ${old.length ? `<button class="btn ghost small danger self-start" data-act="purge">${S.armed === 'purge' ? `Emin misin? ${old.length} oda silinecek` : `30 günden eski odaları sil (${old.length})`}</button>` : ''}`;
@@ -122,7 +123,7 @@ function viewRoom(code, r) {
   const hist = Object.values(r.history || {}).filter(Boolean).sort((a, b) => b.round - a.round);
   const st = r.settings || {};
   return `<div class="row"><button class="btn ghost small" data-act="back">← Tüm odalar</button><a class="btn ghost small" href="./#${esc(code)}" target="_blank" rel="noopener">Oyunda aç</a></div>
-    <h2 class="title" dir="ltr">${esc(code)}</h2>
+    <h2 class="title" dir="ltr">${esc(code)}</h2>${roomName(r) ? `<p class="h2">${esc(roomName(r))}</p>` : ''}
     <dl class="kv">
       <dt>Tür</dt><dd>${online ? 'Online' : 'Tek telefon'}${online ? ` · ${st.public ? 'Açık' : 'Özel'}` : ''}</dd>
       <dt>Oda sahibi</dt><dd>${esc(hostName(r))}${r.meta && r.meta.pinSet === false ? ' · PIN belirlenmemiş' : ''}</dd>
@@ -191,7 +192,7 @@ $app.addEventListener('click', async e => {
         await set(R('settings/public'), pub);
         if (pub) {
           const ps = playersOf(r);
-          await set(ref(db, `publicRooms/${S.sel}`), { hostName: hostName(r), lang: (r.settings && r.settings.lang) || 'tr', players: ps.filter(p => here(r, p)).length, phase: 'lobby', updatedAt: Date.now() });
+          await set(ref(db, `publicRooms/${S.sel}`), { name: roomName(r), hostName: hostName(r), lang: (r.settings && r.settings.lang) || 'tr', players: ps.filter(p => here(r, p)).length, phase: 'lobby', updatedAt: Date.now() });
         } else await remove(ref(db, `publicRooms/${S.sel}`));
         flash(pub ? 'Oda açık yapıldı' : 'Oda özel yapıldı'); break;
       }

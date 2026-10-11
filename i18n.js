@@ -9,6 +9,12 @@ export const LANGS = [
 
 export const STR = {
   tr: {
+    roomNameLabel: "Oda adı (isteğe bağlı)",
+    roomNamePh: "Örn. Cuma akşamı",
+    roomNameHelp: "Herkes odayı bu adla görür. En fazla 30 karakter.",
+    deleteRoom: "Odayı sil",
+    deleteRoomNote: "Oda, puanlar, tur geçmişi ve tüm PIN'ler kalıcı olarak silinir. Geri alınamaz.",
+    roomDeleted: "Oda silindi.",
     about: "Hakkında",
     howToPlay: "Nasıl oynanır",
     aboutLead: "Arkadaşlarla oynanan, çok dilli bir kelime ve blöf oyunu. Herkes gizli kelimeyi bilir, sahtekâr bilmez.",
@@ -209,6 +215,12 @@ export const STR = {
     crewNote: 'Kelimeyi doğrudan söyleme, sadece ipucu ver.'
   },
   ar: {
+    roomNameLabel: "اسم الغرفة (اختياري)",
+    roomNamePh: "مثلًا: سهرة الجمعة",
+    roomNameHelp: "يرى الجميع الغرفة بهذا الاسم. 30 حرفًا كحد أقصى.",
+    deleteRoom: "احذف الغرفة",
+    deleteRoomNote: "تُحذف الغرفة والنقاط وسجل الجولات وكل الرموز السرية نهائيًا، ولا يمكن التراجع.",
+    roomDeleted: "تم حذف الغرفة.",
     about: "حول التطبيق",
     howToPlay: "طريقة اللعب",
     aboutLead: "لعبة كلمات وخداع متعددة اللغات تُلعب مع الأصدقاء. الجميع يعرف الكلمة السرية إلا المحتال.",
@@ -408,6 +420,12 @@ export const STR = {
     crewNote: 'لا تقل الكلمة مباشرة، أعطِ تلميحًا فقط.'
   },
   en: {
+    roomNameLabel: "Room name (optional)",
+    roomNamePh: "e.g. Friday night",
+    roomNameHelp: "Everyone sees the room under this name. Up to 30 characters.",
+    deleteRoom: "Delete room",
+    deleteRoomNote: "The room, scores, round history and all PINs are deleted for good. This cannot be undone.",
+    roomDeleted: "Room deleted.",
     about: "About",
     howToPlay: "How to play",
     aboutLead: "A multilingual word and bluffing game to play with friends. Everyone knows the secret word except the imposter.",
