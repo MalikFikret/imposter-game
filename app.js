@@ -15,6 +15,10 @@ const firebaseConfig = {
   appId: '1:358335009293:web:439ba4c30a8efa69787b44'
 };
 
+const APP_VERSION = '1.0.0';
+const REPO_URL = 'https://github.com/MalikFikret/imposter-game';
+const guideUrl = () => `guide/${['tr', 'ar', 'en'].includes(S.ui) ? S.ui : 'en'}.html`;
+
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
 const db = getDatabase(fb);
@@ -555,6 +559,7 @@ function render() {
   let h;
   if (!S.uid) h = header() + `<p class="panel muted">${S.error || t('connecting')}</p>`;
   else if (S.view === 'create') h = header() + viewCreate();
+  else if (S.view === 'about') h = header() + viewAbout();
   else if (S.view === 'room') h = viewRoom();
   else { h = header() + viewHome(); startPublicList(); }
   if (S.toast) h += `<div class="toast" role="status">${S.toast}</div>`;
@@ -605,7 +610,26 @@ function viewHome() {
     <span class="label">${esc(t('recent'))}</span>
     <div class="list">${recent.map(x => `<button class="row-btn" data-act="open" data-code="${esc(x.code)}"><span class="mono" dir="ltr">${esc(x.code)}</span><span class="muted">${esc(x.mode === 'local' ? t('local') : t('online'))}</span></button>`).join('')}</div>
   </section>` : ''}
-`;
+  <footer class="foot">
+    <nav class="foot-links"><a href="${guideUrl()}">${esc(t('howToPlay'))}</a><button data-act="about">${esc(t('about'))}</button></nav>
+    <p>${esc(t('rightsLine'))}</p>
+  </footer>`;
+}
+
+function viewAbout() {
+  return `<div class="row"><button class="btn ghost small" data-act="home">${backArrow()} ${esc(t('back'))}</button></div>
+  <section class="hero">
+    <h1 class="title">${esc(t('appName'))}</h1>
+    <p class="lede">${esc(t('aboutLead'))}</p>
+  </section>
+  <dl class="kv about-kv">
+    <dt>${esc(t('version'))}</dt><dd dir="ltr">${APP_VERSION}</dd>
+    <dt>${esc(t('developer'))}</dt><dd><b>Malik Fikret</b></dd>
+    <dt>${esc(t('languages'))}</dt><dd>${LANGS.map(l => `<span lang="${l.code}">${esc(l.name)}</span>`).join(sep())}</dd>
+  </dl>
+  <div class="row two"><a class="btn" href="${guideUrl()}">${esc(t('howToPlay'))}</a><a class="btn ghost" href="${REPO_URL}" target="_blank" rel="noopener">${esc(t('sourceCode'))}</a></div>
+  <section class="stack"><h2 class="h2">${esc(t('privacyTitle'))}</h2><p class="muted">${esc(t('privacyText'))}</p></section>
+  <section class="panel stack rights"><b>${esc(t('rightsLine'))}</b><p class="muted">${esc(t('rightsText'))}</p></section>`;
 }
 
 function rulesForm(d) {
@@ -1049,6 +1073,7 @@ async function act(a, ds) {
   switch (a) {
     case 'home': if (S.view === 'room') leaveRoom(); else { S.view = 'home'; render(); } break;
     case 'langMenu': S.langOpen = !S.langOpen; render(); break;
+    case 'about': S.view = 'about'; render(); window.scrollTo(0, 0); break;
     case 'setLang': S.ui = normLang(ds.v); S.langOpen = false; ls.set('ui', S.ui); render(); break;
     case 'tab': S.tab = ds.v; S.editing = false; render(); break;
     case 'newOnline': case 'newLocal':

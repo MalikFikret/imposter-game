@@ -9,6 +9,17 @@ export const LANGS = [
 
 export const STR = {
   tr: {
+    about: "Hakkında",
+    howToPlay: "Nasıl oynanır",
+    aboutLead: "Arkadaşlarla oynanan, çok dilli bir kelime ve blöf oyunu. Herkes gizli kelimeyi bilir, sahtekâr bilmez.",
+    version: "Sürüm",
+    developer: "Geliştirici",
+    languages: "Diller",
+    privacyTitle: "Gizlilik",
+    privacyText: "Hesap gerekmez. Her cihaza arka planda anonim bir kimlik verilir. Sadece oyun için gereken bilgiler (oda kodu, oyuncu adları, oylar ve puanlar) saklanır. PIN'ler kimse tarafından görülemez.",
+    sourceCode: "Kaynak kod",
+    rightsLine: "© 2026 Malik Fikret. Tüm hakları saklıdır.",
+    rightsText: "Bu uygulamanın kodu, tasarımı, kelime listeleri ve metinleri Malik Fikret'e aittir. İzinsiz kopyalanamaz, değiştirilemez ve başka bir yerde yayınlanamaz.",
     publicRooms: 'Açık odalar',
     playersN: '{n} kişi',
     phasePlaying: 'oyunda',
@@ -198,6 +209,17 @@ export const STR = {
     crewNote: 'Kelimeyi doğrudan söyleme, sadece ipucu ver.'
   },
   ar: {
+    about: "حول التطبيق",
+    howToPlay: "طريقة اللعب",
+    aboutLead: "لعبة كلمات وخداع متعددة اللغات تُلعب مع الأصدقاء. الجميع يعرف الكلمة السرية إلا المحتال.",
+    version: "الإصدار",
+    developer: "المطوّر",
+    languages: "اللغات",
+    privacyTitle: "الخصوصية",
+    privacyText: "لا حاجة إلى حساب. يُعطى كل جهاز هوية مجهولة في الخلفية، ولا يُحفظ إلا ما تحتاجه اللعبة: رمز الغرفة وأسماء اللاعبين والأصوات والنقاط. ولا يستطيع أحد رؤية الرموز السرية.",
+    sourceCode: "الشيفرة المصدرية",
+    rightsLine: "جميع الحقوق محفوظة © 2026 لمالك فكرت (Malik Fikret).",
+    rightsText: "شيفرة هذا التطبيق وتصميمه وقوائم كلماته ونصوصه ملك لمالك فكرت. لا يجوز نسخها أو تعديلها أو نشرها في مكان آخر دون إذن.",
     publicRooms: 'غرف مفتوحة',
     playersN: '{n} لاعبين',
     phasePlaying: 'يلعبون',
@@ -386,6 +408,17 @@ export const STR = {
     crewNote: 'لا تقل الكلمة مباشرة، أعطِ تلميحًا فقط.'
   },
   en: {
+    about: "About",
+    howToPlay: "How to play",
+    aboutLead: "A multilingual word and bluffing game to play with friends. Everyone knows the secret word except the imposter.",
+    version: "Version",
+    developer: "Developer",
+    languages: "Languages",
+    privacyTitle: "Privacy",
+    privacyText: "No account needed. Each device gets an anonymous identity in the background. Only what the game needs is stored: room code, player names, votes and scores. Nobody can see the PINs.",
+    sourceCode: "Source code",
+    rightsLine: "© 2026 Malik Fikret. All rights reserved.",
+    rightsText: "The code, design, word lists and texts of this app belong to Malik Fikret. They may not be copied, modified or published elsewhere without permission.",
     publicRooms: "Open rooms",
     playersN: "{n} players",
     phasePlaying: "playing",
