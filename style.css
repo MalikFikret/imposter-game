@@ -211,6 +211,14 @@ main.stack-lg { gap: 20px; }
 .tbl tr:last-child td { border-bottom: 0; }
 .tbl .num { text-align: end; font-variant-numeric: tabular-nums; font-family: var(--font-mono); white-space: nowrap; }
 .tbl tr.lead td:first-child { font-weight: 800; }
+/* Score table: points are the main number */
+.score-tbl td { vertical-align: middle; font-size: 1rem; }
+.score-tbl th.pts-col { color: var(--fg); font-size: .78rem; }
+.score-tbl td.minor { color: var(--muted); font-size: .85rem; }
+.pts-big { display: inline-block; min-width: 2.4em; padding: 4px 10px; border-radius: 10px; background: var(--fg); color: var(--on-fg);
+  font-family: var(--font-display); font-size: 1.6rem; line-height: 1.1; text-align: center; }
+.score-tbl tr.lead .pts-big { background: var(--crew); color: var(--on-fg); }
+.score-tbl tr.lead td:first-child::after { content: ' ★'; color: var(--crew); }
 .sub-cell { display: block; color: var(--muted); font-size: .8rem; }
 /* Language picker */
 .lang-menu { position: relative; }

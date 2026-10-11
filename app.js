@@ -1,8 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getDatabase, ref, onValue, get, set, update, remove, runTransaction, onDisconnect, query, orderByChild, limitToLast, increment } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
-import { CATS } from './words.js?v=1.0.7';
-import { STR, LANGS } from './i18n.js?v=1.0.7';
+import { CATS } from './words.js?v=1.0.8';
+import { STR, LANGS } from './i18n.js?v=1.0.8';
 
 // Public web config. Not a secret: access is enforced by database.rules.json.
 const firebaseConfig = {
@@ -15,7 +15,7 @@ const firebaseConfig = {
   appId: '1:358335009293:web:439ba4c30a8efa69787b44'
 };
 
-const APP_VERSION = '1.0.7';
+const APP_VERSION = '1.0.8';
 const REPO_URL = 'https://github.com/MalikFikret/imposter-game';
 const guideUrl = () => `guide/${['tr', 'ar', 'en'].includes(S.ui) ? S.ui : 'en'}.html`;
 
@@ -877,9 +877,9 @@ function viewScores(r, host) {
   if (!hist.length) return `<p class="panel muted">${esc(t('noHistory'))}</p>`;
   const sc = scoresOf(r), st = statsOf(r);
   return `<section class="stack"><span class="label">${esc(t('scores'))}</span>
-    <div class="table-wrap"><table class="tbl">
-      <thead><tr><th>${esc(t('colPlayer'))}</th><th class="num">${esc(t('colPoints'))}</th><th class="num">${esc(t('colWon'))}</th><th class="num">${esc(t('colPlayed'))}</th><th class="num">${esc(t('colImp'))}</th></tr></thead>
-      <tbody>${sc.map(([p, n], i) => { const x = st[p] || { played: 0, won: 0, imp: 0 }; return `<tr class="${i === 0 && n > 0 ? 'lead' : ''}"><td>${esc(nameOf(p))}</td><td class="num"><b>${n}</b></td><td class="num">${x.won}</td><td class="num">${x.played}</td><td class="num">${x.imp}</td></tr>`; }).join('')}</tbody>
+    <div class="table-wrap"><table class="tbl score-tbl">
+      <thead><tr><th>${esc(t('colPlayer'))}</th><th class="num pts-col">${esc(t('colPoints'))}</th><th class="num">${esc(t('colWon'))}</th><th class="num">${esc(t('colPlayed'))}</th><th class="num">${esc(t('colImp'))}</th></tr></thead>
+      <tbody>${sc.map(([p, n]) => { const x = st[p] || { played: 0, won: 0, imp: 0 }; return `<tr class="${n > 0 && n === sc[0][1] ? 'lead' : ''}"><td>${esc(nameOf(p))}</td><td class="num pts-col"><span class="pts-big">${n}</span></td><td class="num minor">${x.won}</td><td class="num minor">${x.played}</td><td class="num minor">${x.imp}</td></tr>`; }).join('')}</tbody>
     </table></div></section>
     <section class="stack"><span class="label">${esc(t('history'))} · ${hist.length}</span>
     <div class="table-wrap"><table class="tbl">
