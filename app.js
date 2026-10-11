@@ -1,8 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getDatabase, ref, onValue, get, set, update, remove, runTransaction, onDisconnect, query, orderByChild, limitToLast } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
-import { CATS } from './words.js?v=1.0.3';
-import { STR, LANGS } from './i18n.js?v=1.0.3';
+import { CATS } from './words.js?v=1.0.4';
+import { STR, LANGS } from './i18n.js?v=1.0.4';
 
 // Public web config. Not a secret: access is enforced by database.rules.json.
 const firebaseConfig = {
@@ -15,7 +15,7 @@ const firebaseConfig = {
   appId: '1:358335009293:web:439ba4c30a8efa69787b44'
 };
 
-const APP_VERSION = '1.0.3';
+const APP_VERSION = '1.0.4';
 const REPO_URL = 'https://github.com/MalikFikret/imposter-game';
 const guideUrl = () => `guide/${['tr', 'ar', 'en'].includes(S.ui) ? S.ui : 'en'}.html`;
 
@@ -592,7 +592,7 @@ function header() {
 
 function pinInput(id, field, n, label, help) {
   return `<label class="field"><span class="label">${esc(label)}</span>
-    <input id="${id}" class="pin-in" ${field} type="password" inputmode="numeric" pattern="[0-9]*" maxlength="${n}" autocomplete="off" dir="ltr">
+    <input id="${id}" class="pin-in" ${field} type="text" inputmode="numeric" pattern="[0-9]*" maxlength="${n}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore dir="ltr">
     ${help ? `<span class="note">${esc(help)}</span>` : ''}</label>`;
 }
 
@@ -1099,8 +1099,14 @@ $app.addEventListener('input', e => {
     const v = el.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
     if (el.value !== v) el.value = v;
     S.joinCode = v;
-  } else if (ds.form) S.form[ds.form] = el.value;
-  else if (ds.draft && S.draft) S.draft[ds.draft] = el.value;
+  } else if (ds.form) {
+    if (el.classList.contains('pin-in')) { const v = el.value.replace(/[^0-9]/g, ''); if (v !== el.value) el.value = v; }
+    S.form[ds.form] = el.value;
+  }
+  else if (ds.draft && S.draft) {
+    if (el.classList.contains('pin-in')) { const v = el.value.replace(/[^0-9]/g, ''); if (v !== el.value) el.value = v; }
+    S.draft[ds.draft] = el.value;
+  }
   else if (ds.pname != null && S.draft) S.draft.players[+ds.pname].name = el.value;
 });
 $app.addEventListener('keydown', e => {

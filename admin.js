@@ -1,8 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getDatabase, ref, onValue, set, update, remove } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
-import { CATS } from './words.js?v=1.0.3';
-import { LANGS } from './i18n.js?v=1.0.3';
+import { CATS } from './words.js?v=1.0.4';
+import { LANGS } from './i18n.js?v=1.0.4';
 const langName = c => (LANGS.find(l => l.code === c) || LANGS[0]).name;
 
 // Same project as the game, but a separately named app instance so the admin's Google

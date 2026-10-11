@@ -189,6 +189,8 @@ input { font: inherit; font-weight: 500; width: 100%; min-width: 0; padding: 12p
 .namechip { padding: 6px 12px; border-radius: 999px; background: var(--surface); border: 1.5px solid var(--line); font-weight: 600; }
 .attn { border-color: var(--imp); }
 .pin-in { font-family: var(--font-mono); font-size: 1.3rem; letter-spacing: .4em; text-align: center; }
+/* PINs are masked visually only, so browsers do not treat them as passwords (no breach warnings or save prompts) */
+.pin-in { -webkit-text-security: disc; text-security: disc; }
 .row.nowrap { flex-wrap: nowrap; }
 .row.nowrap .code-in { flex: 1; }
 .btn.auto { width: auto; flex: none; }
