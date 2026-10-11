@@ -17,6 +17,7 @@ A multilingual party word game for 3–10 players. Everyone gets the same secret
 | Game modes | **Online room**: every player joins from their own phone with a 6-character code or invite link and votes on their own device. **Single-phone room**: one phone is passed around; votes are made out loud and marked on the phone. |
 | Rounds | Random speaking order (the imposter speaks first only ~5% of the time), vote with explicit confirmation, automatic re-vote on ties, 60-second guess timer for a caught imposter, majority "did they guess it?" vote. |
 | Scoring | Crew win: +1 to every crew member still in the round. Imposter win: +2 to each imposter. Per-room history and a score table (points, wins, rounds played, times as imposter). |
+| Room creation | Online rooms are created in two steps: (1) the host sets the room name, a 6-digit room PIN and the rules; (2) the host joins as a player on the normal join screen with a name and 4-digit personal PIN. Single-phone rooms are created in one step. |
 | Rooms | Optional room name, private (code only) or public (listed on the main menu), editable rules (word language, categories, 1–2 imposters, category hint for the imposter), persistent across days. |
 | Identity | No sign-up. Each device gets a Firebase anonymous identity. Players protect their seat with a 4-digit personal PIN; the host protects the room with a 6-digit room PIN. |
 | Host tools | Rename or delete the room, kick (visible as "removed by the host"), approve name changes, hand over the host role (new host sets a new PIN), confirm whether to continue without a disconnected player or cancel the round. |
@@ -43,7 +44,7 @@ There is no custom backend. All game logic runs in the clients; integrity is enf
 
 ```
 rooms/{CODE}                       CODE = 6 chars from A–Z, 2–9 (no 0/O/1/I/L)
-  meta      {host: uid, hostSlot, mode: online|local, pinSet, createdAt}
+  meta      {host: uid, hostSlot, mode: online|local, pinSet, createdAt}   hostSlot is set when the host first takes a seat (step 2)
   settings  {name, lang, cats[], hint, imps, public}
   players/{slot}  {name, uid, joinedAt, status: in|left|kicked, online, nameReq}
   members/{uid} = slot             which seat a device occupies (used by the rules)
@@ -79,6 +80,7 @@ Phase changes are done with `runTransaction` guarded on the expected phase/round
 | Per-seat writes | A device can only write its own seat's `online`, `status` (`in`/`left`), `nameReq`, vote and judge answer. Names change only through host approval. |
 | `secrets/` has no read rule | PINs are never readable. Ownership is proven by writing a guess to `claims/` and letting the rule compare it with the secret. |
 | `history/r{n}` create-only | Results are immutable once written. |
+| PIN inputs | Rendered as digit-only text inputs masked with CSS (`-webkit-text-security`), not `type="password"`, so browsers neither offer to save them nor show data-breach warnings for common PINs. |
 | Admin | Root read/write only for one Google account UID. |
 
 **Known limitations** (accepted for a friends' party game):
